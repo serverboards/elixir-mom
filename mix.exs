@@ -4,14 +4,18 @@ defmodule MOM.Mixfile do
   def project do
     [app: :mom,
      version: "0.2.0",
-     build_path: "../../_build",
-     config_path: "../../config/config.exs",
-     deps_path: "../../deps",
-     lockfile: "../../mix.lock",
      elixir: "~> 1.2",
+     name: "Elixir MOM",
      build_embedded: Mix.env == :prod,
      start_permanent: Mix.env == :prod,
-     deps: deps]
+     deps: deps,
+     description: description,
+     package: package,
+     docs: [
+       logo: "docs/serverboards.png",
+       extras: ["README.md"]
+     ]
+   ]
   end
 
   # Configuration for the OTP application
@@ -24,7 +28,7 @@ defmodule MOM.Mixfile do
     ]
   end
 
-  defp descripton do
+  defp description do
     """
     Message Oriented Middleware for Elixir
     """
@@ -45,7 +49,9 @@ defmodule MOM.Mixfile do
 
   defp deps do
     [
-      { :uuid, "~> 1.1.3" }
+      {:json, "~> 0.3.0"},
+      {:uuid, "~> 1.1.3" },
+      {:ex_doc, "~> 0.11", only: :dev}
     ]
   end
 end
