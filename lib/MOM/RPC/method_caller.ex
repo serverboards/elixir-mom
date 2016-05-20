@@ -11,13 +11,16 @@ defmodule MOM.RPC.MethodCaller do
 
   ## Example
 
-    iex> alias MOM.RPC.MethodCaller
-    iex> {:ok, mc} = MethodCaller.start_link
-    iex> MethodCaller.add_method mc, "ping", fn _ -> "pong" end, async: false
-    iex> MethodCaller.call mc, "ping", [], nil
-    {:ok, "pong"}
-    iex> MethodCaller.call mc, "dir", [], nil
-    {:ok, ["dir", "ping"]}
+```
+  iex> alias MOM.RPC.MethodCaller
+  iex> {:ok, mc} = MethodCaller.start_link
+  iex> MethodCaller.add_method mc, "ping", fn _ -> "pong" end, async: false
+  iex> MethodCaller.call mc, "ping", [], nil
+  {:ok, "pong"}
+  iex> MethodCaller.call mc, "dir", [], nil
+  {:ok, ["dir", "ping"]}
+
+```
 
   """
 
@@ -106,18 +109,20 @@ defmodule MOM.RPC.MethodCaller do
 
   ## Example
 
-    iex> alias MOM.RPC.MethodCaller
-    iex> {:ok, mc} = MethodCaller.start_link
-    iex> MethodCaller.add_method mc, "test_ok", fn _ -> {:ok, :response_ok} end
-    iex> MethodCaller.add_method mc, "test_error", fn _ -> {:error, :response_error} end
-    iex> MethodCaller.add_method mc, "test_plain", fn _ -> :response_plain_ok end
-    iex> MethodCaller.call mc, "test_ok", [], nil
-    {:ok, :response_ok}
-    iex> MethodCaller.call mc, "test_error", [], nil
-    {:error, :response_error}
-    iex> MethodCaller.call mc, "test_plain", [], nil
-    {:ok, :response_plain_ok}
+```
+  iex> alias MOM.RPC.MethodCaller
+  iex> {:ok, mc} = MethodCaller.start_link
+  iex> MethodCaller.add_method mc, "test_ok", fn _ -> {:ok, :response_ok} end
+  iex> MethodCaller.add_method mc, "test_error", fn _ -> {:error, :response_error} end
+  iex> MethodCaller.add_method mc, "test_plain", fn _ -> :response_plain_ok end
+  iex> MethodCaller.call mc, "test_ok", [], nil
+  {:ok, :response_ok}
+  iex> MethodCaller.call mc, "test_error", [], nil
+  {:error, :response_error}
+  iex> MethodCaller.call mc, "test_plain", [], nil
+  {:ok, :response_plain_ok}
 
+```
   """
   def add_method(pid, name, f, options \\ []) do
     Agent.update pid, fn st ->
@@ -140,49 +145,54 @@ defmodule MOM.RPC.MethodCaller do
   I will create three method callers, so that a calls, and b too. Method can
   be shadowed at parent too.
 
-    iex> alias MOM.RPC.{MethodCaller, Context}
-    iex> {:ok, a} = MethodCaller.start_link
-    iex> {:ok, b} = MethodCaller.start_link
-    iex> {:ok, c} = MethodCaller.start_link
-    iex> MethodCaller.add_method a, "a", fn _ -> :a end
-    iex> MethodCaller.add_method b, "b", fn _ -> :b end
-    iex> MethodCaller.add_method c, "c", fn _ -> :c end
-    iex> MethodCaller.add_method c, "c_", fn _, context -> {:c, Context.get(context, :user, nil)} end, context: true
-    iex> MethodCaller.add_method_caller a, c
-    iex> MethodCaller.add_method_caller b, c
-    iex> {:ok, context} = Context.start_link
-    iex> Context.set context, :user, :me
-    iex> MethodCaller.call a, "c", [], context
-    {:ok, :c}
-    iex> MethodCaller.call a, "c_", [], context
-    {:ok, {:c, :me}}
-    iex> MethodCaller.call b, "c", [], context
-    {:ok, :c}
-    iex> MethodCaller.call b, "c_", [], context
-    {:ok, {:c, :me}}
-    iex> MethodCaller.add_method a, "c", fn _ -> :shadow end
-    iex> MethodCaller.call a, "c", [], context
-    {:ok, :shadow}
-    iex> MethodCaller.call b, "c", [], context
-    {:ok, :c}
-    iex> MethodCaller.call b, "d", [], context
-    {:error, :unknown_method}
+```
+  iex> alias MOM.RPC.{MethodCaller, Context}
+  iex> {:ok, a} = MethodCaller.start_link
+  iex> {:ok, b} = MethodCaller.start_link
+  iex> {:ok, c} = MethodCaller.start_link
+  iex> MethodCaller.add_method a, "a", fn _ -> :a end
+  iex> MethodCaller.add_method b, "b", fn _ -> :b end
+  iex> MethodCaller.add_method c, "c", fn _ -> :c end
+  iex> MethodCaller.add_method c, "c_", fn _, context -> {:c, Context.get(context, :user, nil)} end, context: true
+  iex> MethodCaller.add_method_caller a, c
+  iex> MethodCaller.add_method_caller b, c
+  iex> {:ok, context} = Context.start_link
+  iex> Context.set context, :user, :me
+  iex> MethodCaller.call a, "c", [], context
+  {:ok, :c}
+  iex> MethodCaller.call a, "c_", [], context
+  {:ok, {:c, :me}}
+  iex> MethodCaller.call b, "c", [], context
+  {:ok, :c}
+  iex> MethodCaller.call b, "c_", [], context
+  {:ok, {:c, :me}}
+  iex> MethodCaller.add_method a, "c", fn _ -> :shadow end
+  iex> MethodCaller.call a, "c", [], context
+  {:ok, :shadow}
+  iex> MethodCaller.call b, "c", [], context
+  {:ok, :c}
+  iex> MethodCaller.call b, "d", [], context
+  {:error, :unknown_method}
+
+```
 
   Custom method caller that calls a function
 
-    iex> alias MOM.RPC.MethodCaller
-    iex> {:ok, mc} = MethodCaller.start_link
-    iex> MethodCaller.add_method_caller(mc, fn msg ->
-    ...>   case msg.method do
-    ...>     "hello."<>ret -> {:ok, ret}
-    ...>     _ -> :nok
-    ...>   end
-    ...> end)
-    iex> MethodCaller.call mc, "hello.world", [], nil
-    {:ok, "world"}
-    iex> MethodCaller.call mc, "world.hello", [], nil
-    {:error, :unknown_method}
+```
+  iex> alias MOM.RPC.MethodCaller
+  iex> {:ok, mc} = MethodCaller.start_link
+  iex> MethodCaller.add_method_caller(mc, fn msg ->
+  ...>   case msg.method do
+  ...>     "hello."<>ret -> {:ok, ret}
+  ...>     _ -> :nok
+  ...>   end
+  ...> end)
+  iex> MethodCaller.call mc, "hello.world", [], nil
+  {:ok, "world"}
+  iex> MethodCaller.call mc, "world.hello", [], nil
+  {:error, :unknown_method}
 
+```
   """
   def add_method_caller(pid, pid, _) do
     raise Exception, "Cant add a method caller to itself."
@@ -200,58 +210,61 @@ defmodule MOM.RPC.MethodCaller do
   @doc ~S"""
   Adds a guard to the method caller
 
-  This guards are used to ensure that a called method is allowed.
+  This guards are called to ensure that a called method is allowed to be called.
 
-  If the mehtod is not allowed, it will be skipped as if never added, and
+  If the method call is not allowed, it will be skipped as if never added, and
   `dir` will not return it neither.
 
   Guards are functions that receive the RPC message and the options of the
-  method, and return true or false as they allow or not that method.
-  This way generic guards can be created.
+  method, and return true or false to mark if they allow or not that method
+  call. This way generic guards can be created.
 
-  name is a debug name used to log what guard failed. Any error/exception on
-  guards are interpreted as denial. Clause errors are not logged. Other errors
-  are reraised.
+  `name` is a debug name used to log what guard failed. Any error/exception on
+  guards are interpreted as denial. Clause errors are not logged to ease
+  creation of guards for specific pattern matches. Other errors are reraised.
 
-  The very same "dir" that would be called with a method aller can have guards
+  The very same `dir` that would be called with a method caller can have guards
   that prevent its call, but the dir implementation has to make sure to return
   only the approved methods.
 
   ## Example
 
-  It creates a classic method and a function method caller. Both do the same.
+  It creates a method and a guard.
 
-    iex> require Logger
-    iex> {:ok, mc} = start_link
-    iex> add_method mc, "echo", &(&1), require_perm: "echo"
-    iex> add_method_caller mc, fn
-    ...>   %{ method: "dir" } -> {:ok, ["echo_fn"]}
-    ...>   %{ method: "echo_fn", params: params } -> {:ok, params}
-    ...>   _ -> {:error, :unknown_method }
-    ...> end, require_perm: "echo"
-    iex> add_guard mc, "perms", fn %{ context: context }, options ->
-    ...>   case Keyword.get(options, :require_perm) do
-    ...>     nil -> true # no require perms, ok
-    ...>     required_perm ->
-    ...>       Enum.member? Map.get(context, :perms, []), required_perm
-    ...>   end
-    ...> end
-    iex> call mc, "echo", [1,2,3], %{ } # no context
-    {:error, :unknown_method}
-    iex> call mc, "echo", [1,2,3], %{ perms: [] } # no perms
-    {:error, :unknown_method}
-    iex> call mc, "echo", [1,2,3], %{ perms: ["echo"] } # no perms
-    {:ok, [1,2,3]}
-    iex> call mc, "echo_fn", [1,2,3], %{ } # no context
-    {:error, :unknown_method}
-    iex> call mc, "echo_fn", [1,2,3], %{ perms: [] } # no perms
-    {:error, :unknown_method}
-    iex> call mc, "echo_fn", [1,2,3], %{ perms: ["echo"] } # no perms
-    {:ok, [1,2,3]}
-    iex> call mc, "dir", [], %{}
-    {:ok, ["dir"]}
-    iex> call mc, "dir", [], %{ perms: ["echo"] }
-    {:ok, ["dir", "echo", "echo_fn"]}
+```
+  iex> require Logger
+  iex> {:ok, mc} = start_link
+  iex> add_method mc, "echo", &(&1), require_perm: "echo"
+  iex> add_method_caller mc, fn
+  ...>   %{ method: "dir" } -> {:ok, ["echo_fn"]}
+  ...>   %{ method: "echo_fn", params: params } -> {:ok, params}
+  ...>   _ -> {:error, :unknown_method }
+  ...> end, require_perm: "echo"
+  iex> add_guard mc, "perms", fn %{ context: context }, options ->
+  ...>   case Keyword.get(options, :require_perm) do
+  ...>     nil -> true # no require perms, ok
+  ...>     required_perm ->
+  ...>       Enum.member? Map.get(context, :perms, []), required_perm
+  ...>   end
+  ...> end
+  iex> call mc, "echo", [1,2,3], %{ } # no context
+  {:error, :unknown_method}
+  iex> call mc, "echo", [1,2,3], %{ perms: [] } # no perms
+  {:error, :unknown_method}
+  iex> call mc, "echo", [1,2,3], %{ perms: ["echo"] } # no perms
+  {:ok, [1,2,3]}
+  iex> call mc, "echo_fn", [1,2,3], %{ } # no context
+  {:error, :unknown_method}
+  iex> call mc, "echo_fn", [1,2,3], %{ perms: [] } # no perms
+  {:error, :unknown_method}
+  iex> call mc, "echo_fn", [1,2,3], %{ perms: ["echo"] } # no perms
+  {:ok, [1,2,3]}
+  iex> call mc, "dir", [], %{}
+  {:ok, ["dir"]}
+  iex> call mc, "dir", [], %{ perms: ["echo"] }
+  {:ok, ["dir", "echo", "echo_fn"]}
+
+```
 
   In this example a map is used as context. Normally it would be a RPC.Context.
   """
@@ -330,21 +343,26 @@ defmodule MOM.RPC.MethodCaller do
 
   ## Examples
 
-    iex> alias MOM.RPC.{Context, MethodCaller}
-    iex> {:ok, mc} = MethodCaller.start_link
-    iex> MethodCaller.add_method mc, "echo", fn [what], context -> "#{what}#{Context.get(context, :test, :fail)}" end, context: true
-    iex> {:ok, context} = Context.start_link
-    iex> Context.set context, :test, "ok"
-    iex> MethodCaller.call mc, "echo", ["test_"], context
-    {:ok, "test_ok"}
+```
+  iex> alias MOM.RPC.{Context, MethodCaller}
+  iex> {:ok, mc} = MethodCaller.start_link
+  iex> MethodCaller.add_method mc, "echo", fn [what], context -> "#{what}#{Context.get(context, :test, :fail)}" end, context: true
+  iex> {:ok, context} = Context.start_link
+  iex> Context.set context, :test, "ok"
+  iex> MethodCaller.call mc, "echo", ["test_"], context
+  {:ok, "test_ok"}
 
-    iex> alias MOM.RPC.{Context, MethodCaller}
-    iex> MethodCaller.cast(fn _ -> {:ok, :ok} end, "any", [], nil, fn
-    ...>   {:ok, _v} -> :ok
-    ...>   {:error, e} -> {:error, e}
-    ...> end)
-    :ok
+```
 
+```
+  iex> alias MOM.RPC.{Context, MethodCaller}
+  iex> MethodCaller.cast(fn _ -> {:ok, :ok} end, "any", [], nil, fn
+  ...>   {:ok, _v} -> :ok
+  ...>   {:error, e} -> {:error, e}
+  ...> end)
+  :ok
+
+```
   """
   def cast(f, method, params, context, cb) when is_function(f)  do
     ret = try do

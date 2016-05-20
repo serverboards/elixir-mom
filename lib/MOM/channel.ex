@@ -16,27 +16,33 @@ defprotocol MOM.Channel do
 
   ## Examples
 
-    iex> require Logger
-    iex> alias MOM.{Message, Channel}
-    iex> {:ok, ch} = Channel.Broadcast.start_link
-    iex> Channel.subscribe(ch, fn msg -> Logger.info("Message1 #{inspect msg}") end)
-    0
-    iex> Channel.subscribe(ch, fn msg -> Logger.info("Message2  #{inspect msg}") end)
-    1
-    iex> Channel.send(ch, %Message{ payload: %{method: "echo", param: "Hello world" }})
-    :ok
-    iex> Channel.unsubscribe(ch, 1)
-    :ok
+```
+  iex> require Logger
+  iex> alias MOM.{Message, Channel}
+  iex> {:ok, ch} = Channel.Broadcast.start_link
+  iex> Channel.subscribe(ch, fn msg -> Logger.info("Message1 #{inspect msg}") end)
+  0
+  iex> Channel.subscribe(ch, fn msg -> Logger.info("Message2  #{inspect msg}") end)
+  1
+  iex> Channel.send(ch, %Message{ payload: %{method: "echo", param: "Hello world" }})
+  :ok
+  iex> Channel.unsubscribe(ch, 1)
+  :ok
+
+```
 
   It is allowed to call the channels after an atom
 
-    iex> require Logger
-    iex> alias MOM.{Message, Channel}
-    iex> Channel.Named.start_link
-    iex> id = Channel.subscribe(:deadletter, fn m -> Logger.error("Deadletter #{inspect m}") end)
-    iex> Channel.send(:empty, %Message{}) # always returns ok
-    iex> Channel.unsubscribe(:deadletter, id)
-    :ok
+```
+  iex> require Logger
+  iex> alias MOM.{Message, Channel}
+  iex> Channel.Named.start_link
+  iex> id = Channel.subscribe(:deadletter, fn m -> Logger.error("Deadletter #{inspect m}") end)
+  iex> Channel.send(:empty, %Message{}) # always returns ok
+  iex> Channel.unsubscribe(:deadletter, id)
+  :ok
+
+```
 
   # Channel subscription
 
@@ -54,37 +60,46 @@ defprotocol MOM.Channel do
 
   A subscription normally calls a function when a message arrives
 
-    iex> alias MOM.{Channel, Message}
-    iex> require Logger
-    iex> {:ok, ch} = Channel.Broadcast.start_link
-    iex> Channel.subscribe(ch, fn _ ->
-    ...>   Logger.info("Called")
-    ...>   end)
-    iex> Channel.send(ch, %MOM.Message{ id: 0 })
-    :ok
+```
+  iex> alias MOM.{Channel, Message}
+  iex> require Logger
+  iex> {:ok, ch} = Channel.Broadcast.start_link
+  iex> Channel.subscribe(ch, fn _ ->
+  ...>   Logger.info("Called")
+  ...>   end)
+  iex> Channel.send(ch, %MOM.Message{ id: 0 })
+  :ok
+
+```
 
   Its possible to subscribe to named channels
 
-    iex> alias MOM.{Channel, Message}
-    iex> Channel.subscribe(:named_channel, fn _ -> :ok end)
-    iex> Channel.send(:named_channel, %Message{})
-    :ok
+```
+  iex> alias MOM.{Channel, Message}
+  iex> Channel.subscribe(:named_channel, fn _ -> :ok end)
+  iex> Channel.send(:named_channel, %Message{})
+  :ok
+
+```
 
   Its possible to subscribe a channel to a channel. This is useful to create
   tree like structures where some channels automatically write to another.
 
   All messages in orig are send automatically to dest.
 
-    iex> require Logger
-    iex> alias MOM.{Channel, Message}
-    iex> {:ok, a} = Channel.Broadcast.start_link
-    iex> {:ok, b} = Channel.Broadcast.start_link
-    iex> Channel.subscribe(a, b)
-    iex> Channel.subscribe(b, fn _ ->
-    ...>    Logger.info("B called")
-    ...>    end)
-    iex> Channel.send(a, %MOM.Message{ id: 0, payload: "test"})
-    :ok
+```
+  iex> require Logger
+  iex> alias MOM.{Channel, Message}
+  iex> {:ok, a} = Channel.Broadcast.start_link
+  iex> {:ok, b} = Channel.Broadcast.start_link
+  iex> Channel.subscribe(a, b)
+  iex> Channel.subscribe(b, fn _ ->
+  ...>    Logger.info("B called")
+  ...>    end)
+  iex> Channel.send(a, %MOM.Message{ id: 0, payload: "test"})
+  :ok
+
+```
   """
 
   def subscribe(channel, function, options \\ [])

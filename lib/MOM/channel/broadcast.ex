@@ -22,16 +22,19 @@ defmodule MOM.Channel.Broadcast do
 
   Depending on how succesful was the `send` it returns different values:
 
-    iex> alias MOM.{Channel, Message}
-    iex> {:ok, ch} = Channel.Broadcast.start_link
-    iex> Channel.send(ch, %Message{})
-    :ok
-    iex> Channel.subscribe(ch, fn _ -> :ok end)
-    iex> Channel.send(ch, %Message{})
-    :ok
-    iex> Channel.subscribe(ch, fn _ -> raise "To return :nok" end)
-    iex> Channel.send(ch, %Message{}, sync: true)
-    :ok
+```
+  iex> alias MOM.{Channel, Message}
+  iex> {:ok, ch} = Channel.Broadcast.start_link
+  iex> Channel.send(ch, %Message{})
+  :ok
+  iex> Channel.subscribe(ch, fn _ -> :ok end)
+  iex> Channel.send(ch, %Message{})
+  :ok
+  iex> Channel.subscribe(ch, fn _ -> raise "To return :nok" end)
+  iex> Channel.send(ch, %Message{}, sync: true)
+  :ok
+
+```
 
   """
   def send(channel, %Message{} = message, options) do

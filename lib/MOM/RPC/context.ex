@@ -6,27 +6,36 @@ defmodule MOM.RPC.Context do
 
   Example:
 
-    iex> {:ok, ma} = start_link
-    iex> set ma, "test", true
-    :ok
-    iex> get ma, "test"
-    true
-    iex> get ma, "does-not-exist"
-    nil
-    iex> delete ma, "test"
-    :ok
-    iex> get ma, "test"
-    nil
-    iex> stop ma
-    :ok
+```
+  iex> {:ok, ma} = start_link
+  iex> set ma, "test", true
+  :ok
+  iex> get ma, "test"
+  true
+  iex> get ma, "does-not-exist"
+  nil
+  iex> delete ma, "test"
+  :ok
+  iex> get ma, "test"
+  nil
+  iex> stop ma
+  :ok
+
+```
 
   There is also some default value if MapAgent is nil, to allow some situations.
 
-    iex> get nil, :test, :default_value
-    :default_value
+```
+  iex> get nil, :test, :default_value
+  :default_value
 
-    iex> set nil, :failure, :nok
-    ** (ArgumentError) Invalid context
+```
+
+```
+  iex> set nil, :failure, :nok
+  ** (ArgumentError) Invalid context
+
+```
 
   """
 
@@ -77,24 +86,29 @@ defmodule MOM.RPC.Context do
 
   Example:
 
-    iex> {:ok, c} = start_link
-    iex> update c, :test, a: 1
-    iex> get c, :test
-    %{ a: 1 }
-    iex> update c, :test, [a: nil]
-    iex> get c, :test
-    %{}
-    iex> update c, :test, [a: 1, b: 2, c: nil]
-    iex> get c, :test
-    %{ a: 1, b: 2 }
+```
+  iex> {:ok, c} = start_link
+  iex> update c, :test, a: 1
+  iex> get c, :test
+  %{ a: 1 }
+  iex> update c, :test, [a: nil]
+  iex> get c, :test
+  %{}
+  iex> update c, :test, [a: 1, b: 2, c: nil]
+  iex> get c, :test
+  %{ a: 1, b: 2 }
+
+```
 
   Also can bu strings
 
-    iex> {:ok, c} = start_link
-    iex> update c, :test, [{"string", 1}]
-    iex> get c, :test
-    %{ "string" => 1 }
+```
+  iex> {:ok, c} = start_link
+  iex> update c, :test, [{"string", 1}]
+  iex> get c, :test
+  %{ "string" => 1 }
 
+```
 
   """
   def update(ctx, k, map) do

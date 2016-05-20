@@ -51,7 +51,8 @@ defmodule MOM.Mixfile do
     [
       {:json, "~> 0.3.0"},
       {:uuid, "~> 1.1.3" },
-      {:ex_doc, "~> 0.11", only: :dev}
+      {:ex_doc, "~> 0.11", only: :dev},
+      {:cmark, ">= 0.5.0", only: :dev},
     ]
   end
 end
