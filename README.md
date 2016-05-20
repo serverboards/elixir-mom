@@ -12,7 +12,7 @@ The package can be installed as:
   1. Add mom to your list of dependencies in `mix.exs`:
 
         def deps do
-          [{:mom,  git: "git://github.com/elixir-lang/plug.git"}]
+          [{:mom,  git: "git://github.com/serverboards/elixir-mom"}]
         end
 
   2. Ensure mom is started before your application:
