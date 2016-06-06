@@ -36,8 +36,8 @@ defmodule MOM.RPC.MethodCaller do
     {:ok, pid}
   end
 
-  def stop(pid) do
-    Agent.stop pid
+  def stop(pid, reason \\ :normal) do
+    Agent.stop pid, reason
   end
 
   def debug(false) do
@@ -417,6 +417,9 @@ defmodule MOM.RPC.MethodCaller do
               CaseClauseError ->
                 Logger.error("Case clause error method #{method}\n#{Exception.format_stacktrace System.stacktrace}")
                 cb.({:error, :bad_arity})
+              FunctionClauseError ->
+                Logger.error("Function clause error method #{method}\n#{Exception.format_stacktrace System.stacktrace}")
+                cb.({:error, :bad_arity})
               BadArityError ->
                 Logger.error("Bad arity error #{method}\n#{Exception.format_stacktrace System.stacktrace}")
                 cb.({:error, :bad_arity})
@@ -424,7 +427,7 @@ defmodule MOM.RPC.MethodCaller do
                 Logger.error("Error on method #{method}\n#{inspect e}\n#{Exception.format_stacktrace System.stacktrace}")
                 cb.({:error, e})
             end
-          else
+          else # do not pass guards
             cb.({:error, :unknown_method })
           end
         end

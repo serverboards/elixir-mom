@@ -1,35 +1,19 @@
-require Logger
-
 defmodule MOM.RPC.Client do
   @moduledoc ~S"""
-  Each of the IO clients of serverboards.
+  Standard layout for clients: JSON, Method caller and manual caller.
 
-  It can be TCP/Websocket clients that need to be authenticated, or
+  It can be a TCP/Websocket client that need to be authenticated, or
   Command clients that are given authentication credentials at creation.
 
-  In any case each Endpoint creates a client, and the client connects to the MOM,
-  and do the RPCs.
   """
-  defstruct [
-    to_remote: nil,
-    to_local: nil,
-    options: %{},
-    writef: nil,
-    context: nil,
-    maxid_remote: 0
-  ]
-  alias MOM
+
+  alias MOM.RPC.Endpoint
   alias MOM.RPC
 
-  defmodule BadProtocol do
-    defexception [line: nil]
-
-    def message(exception) do
-      "Bad protocol at line #{inspect(exception.line)}"
-    end
-  end
-
-
+  defstruct [
+    left: nil,
+    right: nil,
+  ]
   @doc ~S"""
   Starts a communication with a client.
 
@@ -47,326 +31,78 @@ defmodule MOM.RPC.Client do
 
   """
   def start_link(options \\ []) do
-    writef=Keyword.get(options, :writef)
-    if writef do
-      GenServer.start_link __MODULE__, options, []
+
+    # Create new context, or reuse given one.
+    context = case Keyword.get(options, :context, nil) do
+      nil ->
+        {:ok, context} = RPC.Context.start_link
+        context
+      context ->
+        context
+    end
+
+    options = options ++ [context: context]
+    options = if options[:writef] == :context do
+      writef = &RPC.Context.set(context, :last_line, &1)
+      [writef: writef] ++ options
     else
-      {:error, :required_writef}
+      options
     end
+
+    {:ok, method_caller} = RPC.MethodCaller.start_link
+    RPC.MethodCaller.add_method method_caller, "version", fn [] ->
+      Mix.Project.config()[:version]
+    end
+    RPC.MethodCaller.add_method method_caller, "ping", fn msg -> msg end
+
+    {:ok, rpc_a } = RPC.start_link name: :a
+    {:ok, rpc_b } = RPC.start_link name: :b
+
+    {:ok, json} = Endpoint.JSON.start_link(rpc_a, rpc_b, options)
+    {:ok, method_caller} = Endpoint.MethodCaller.start_link(rpc_b, options ++ [method_caller: method_caller])
+    {:ok, caller} = Endpoint.Caller.start_link(rpc_a, options)
+
+    RPC.tap(rpc_a, "A")
+    RPC.tap(rpc_b, "B")
+
+    {:ok, %{
+      left_in: json,
+      left_out: json,
+      right_in: method_caller,
+      right_out: caller,
+      context: context
+    }}
   end
 
-  @doc ~S"""
-  Stops cleanly the client and its childs
-  """
-  def stop(client) do
-    GenServer.stop(client)
+  def stop(client, reason \\ :normal) do
+    Endpoint.JSON.stop(client.left_in, reason)
+    Endpoint.MethodCaller.stop(client.right_in, reason)
+    Endpoint.Caller.stop(client.right_out, reason)
+    RPC.Context.stop(client.context, reason)
   end
 
-  @doc ~S"""
-  Returns a debug structure.
-  """
-  def debug(client) do
-    GenServer.call(client, {:debug})
-  end
-
-  @doc ~S"""
-  Taps all the channels, to ease debug of messages.
-  """
-  def tap(client) do
-    GenServer.call(client, {:tap})
-  end
-
-  @doc ~S"""
-  Call method from external client to serverboards.
-
-  When reply callback will be called with {:ok, value} or {:error, reason}.
-  """
-  def call(client, method, params, id, callback) when is_function(callback) do
-    GenServer.call(client, {:call, method, params, id, callback})
-  end
-
-  @doc ~S"""
-  Call event from external client to serverboards
-  """
-  def event(client, method, params) do
-    GenServer.cast(client, {:event, method, params})
-  end
-
-  @doc ~S"""
-  Reply to a previous call to client. This is the answer from "on_call".
-  """
-  def reply(client, result, id) do
-    GenServer.call(client, {:reply, result, id})
-  end
-  @doc ~S"""
-  Reply to a previous call to client with an error. This is the answer from "on_call".
-  """
-  def error(client, result, id) do
-    GenServer.call(client, {:error, result, id})
-  end
-
-  @doc ~S"""
-  Sets the user for this client
-
-  User just needs to have email and permissions.
-
-  ## Example
-
-```
-  iex> {:ok, client} = start_link writef: :context
-  iex> set client, :user, :me
-  iex> get client, :user
-  :me
-
-```
-  """
-  def set(client, key, value) do
-    GenServer.call(client, {:set, key, value})
-  end
-
-  @doc ~S"""
-  Gets info from context of this client
-
-  There are special keys, that get info from the client itself:
-
-  * `:to_local`
-  * `:to_remote`
-
-  ## Example
-
-```
-  iex> {:ok, client} = start_link writef: :context
-  iex> set client, :user, :me
-  iex> get client, :user
-  :me
-  iex> get client, :other, :default
-  :default
-
-```
-
-```
-  iex> {:ok, client} = start_link writef: :context
-  iex> %MOM.RPC{} = get client, :to_local
-  iex> %MOM.RPC{} = get client, :to_remote
-  iex> true # make exdoc happy
-  true
-
-```
-  """
-  def get(client, key, default \\ nil) do
-    GenServer.call(client, {:get, key, default})
-  end
-
-  @doc ~S"""
-  Parses a line from the client
-
-  Returns:
-
-  * :ok -- parsed and in processing
-  * {:error, :bad_protocol} -- Invalid message, maybe not json, maybe not proper fields.
-  """
   def parse_line(client, line) do
-    case line do
-      '' ->
-        :empty
-      line ->
-        case JSON.decode( line ) do
-          {:ok, %{ "method" => method, "params" => params, "id" => id}} ->
-            RPC.Client.call(client, method, params, id, &reply_to_remote(client, id, &1))
-          {:ok, %{ "method" => method, "params" => params}} ->
-            RPC.Client.event(client, method, params)
-          {:ok, %{ "result" => result, "id" => id}} ->
-            RPC.Client.reply(client, result, id)
-          {:ok, %{ "error" => error, "id" => id}} ->
-            RPC.Client.error(client, error, id)
-          _ ->
-            {:error, :bad_protocol}
-        end
+    Endpoint.JSON.parse_line(client.left_in, line)
+  end
+
+  def event_to_remote(client, method, param) do
+    Endpoint.Caller.event(client.right_out, method, param)
+  end
+
+  def get(client, what, default \\ nil) do
+    case what do
+      :left -> client.left_in
+      :left_in -> client.left_in
+      :left_out -> client.left_out
+      :right_in -> client.right_in
+      :right_out -> client.right_out
+      :context -> client.context
+      other ->
+        RPC.Context.get client.context, what, default
     end
   end
 
-  # Sends a reply to the cmd
-  def reply_to_remote(client, id, res) do
-    res = case res do
-      {:error, error} ->
-        #Logger.error("Error on method response: #{inspect error}")
-        %{ "error" => error, "id" => id}
-      {:ok, res} ->
-        %{ "result" => res, "id" => id}
-    end
-    {:ok, res} = JSON.encode( res )
-    #Logger.debug("Got answer #{res}, writing to #{inspect client}")
-
-    GenServer.cast(client, {:write_line, res})
-  end
-
-  @doc ~S"""
-  Call event in the remote client
-  """
-  def event_to_remote(client, method, params) do
-    GenServer.cast(client, {:event_to_remote, method, params})
-  end
-
-
-  @doc ~S"""
-  Calls a method in the remote client
-
-  Id can be:
-   number - an id number
-   nil - Its an event, no id for reply
-   :next - Uses next internal id
-  """
-  def call_to_remote(client, method, params, id) do
-    jmsg = %{ method: method, params: params }
-
-    # maybe has id, maybe not.
-    jmsg = case id do
-      nil -> jmsg
-      :next -> Map.put( jmsg , :id, GenServer.call(client, {:next_remote_id}))
-      id -> Map.put( jmsg , :id, id )
-    end
-
-    # encode and send
-    {:ok, json} = JSON.encode( jmsg )
-    GenServer.cast(client, {:write_line, json})
-  end
-
-  ## server impl
-  def init options do
-    {:ok, context} = MOM.RPC.Context.start_link
-    {:ok, to_remote} = MOM.RPC.start_link context: context, method_caller: false
-    {:ok, to_local} = MOM.RPC.start_link context: context
-
-    writef = case Keyword.get(options, :writef) do
-      :context -> fn line ->
-          Logger.debug("Write to context: :last_line: #{inspect line}")
-          MOM.RPC.Context.set context, :last_line, line
-        end
-      other -> other
-    end
-
-
-    client = %MOM.RPC.Client{
-      to_remote: to_remote,
-      to_local: to_local,
-      writef: writef,
-      context: context,
-      maxid_remote: 0
-    }
-
-    name = with nil <- Keyword.get(options, :name),
-      {:ok, uuid} <- UUID.uuid4,
-      do: uuid
-
-    MOM.RPC.Context.set context, :client, client
-    MOM.RPC.Context.set context, :name, name
-
-    me=self()
-
-    MOM.Channel.subscribe(to_remote.request, fn msg ->
-      RPC.Client.call_to_remote(me, msg.payload.method, msg.payload.params, msg.id)
-      :ok
-    end)
-
-    ts = client.to_local
-    RPC.add_method ts, "version", fn _ ->
-      Keyword.get Serverboards.Mixfile.project, :version
-    end
-
-    RPC.add_method ts, "ping", fn _ ->
-      "pong"
-    end
-
-    {:ok, client }
-  end
-  def terminate(reason, client) do
-    case reason do
-      :normal ->
-        Logger.debug("Terminating client #{RPC.Context.get client.context, :name} because of #{inspect reason}")
-      :shutdown ->
-        Logger.debug("Terminating client #{RPC.Context.get client.context, :name} because of #{inspect reason}")
-      reason ->
-        Logger.error("Terminating client #{RPC.Context.get client.context, :name} because of #{inspect reason}")
-    end
-    reason
-  end
-
-
-  def handle_call({:tap}, _from, client) do
-    name = Client.get client, :name
-    MOM.RPC.tap(client.to_local, ">#{name}")
-    MOM.RPC.tap(client.to_remote, "<#{name}")
-    {:reply, :ok, client}
-  end
-  def handle_call({:call, method, params, id, callback}, _from, client) do
-    #Logger.debug("Call start #{inspect method}")
-    ret = case RPC.cast(client.to_local, method, params, id, callback) do
-      :nok ->
-        callback.({ :error, :unknown_method })
-      :ok -> :ok
-    end
-    #Logger.debug("Call end #{inspect method} -> #{inspect ret}")
-    {:reply, ret, client}
-  end
-  def handle_call({:reply, result, id}, _from, client) do
-    ret = MOM.Channel.send(client.to_remote.reply, %MOM.Message{
-      id: id,
-      payload: result
-      })
-    {:reply, ret, client}
-  end
-  def handle_call({:error, result, id}, _form, client) do
-    ret = MOM.Channel.send(client.to_remote.reply, %MOM.Message{
-      id: id,
-      error: result
-      })
-    {:reply, ret, client}
-  end
-  def handle_call({:set, key, value}, _from, client) do
-    ret = RPC.Context.set(client.context, key, value)
-    {:reply, ret, client}
-  end
-  def handle_call({:get, :to_remote, nil}, _from, client) do
-    {:reply, client.to_remote, client}
-  end
-  def handle_call({:get, :to_local, nil}, _from, client) do
-    {:reply, client.to_local, client}
-  end
-  def handle_call({:get, key, default}, _from, client) do
-    ret = RPC.Context.get(client.context, key, default)
-    {:reply, ret, client}
-  end
-  def handle_call({:debug}, _from, client) do
-    {:reply, %{
-      to_remote: RPC.debug(client.to_remote),
-      to_local: RPC.debug(client.to_local),
-      context: RPC.Context.debug(client.context),
-      options: client.options
-      }, client}
-  end
-  def handle_call({:next_remote_id}, _from, client) do
-    {:reply, client.maxid_remote,
-      %{ client | maxid_remote: client.maxid_remote +1 }
-    }
-  end
-
-  ~S"""
-  Write line has to be cast to unblock deadlock when client writes to server,
-  it does all the processing and as last part from another thread writes the
-  answer.
-
-  If its cast the write is queued, but not blocks.
-  """
-  def handle_cast({:write_line, line}, client) do
-    client.writef.(line<>"\n")
-    {:noreply, client}
-  end
-  def handle_cast({:event, method, params}, client) do
-    RPC.event(client.to_local, method, params)
-    {:noreply,  client}
-  end
-  def handle_cast({:event_to_remote, method, params}, client) do
-    RPC.event(client.to_remote, method, params)
-    {:noreply,  client}
+  def set(client, what, value) do
+    RPC.Context.set client.context, what, value
   end
 end

@@ -46,7 +46,7 @@ defmodule MOM.Channel.PointToPoint do
   :ok
   iex> Channel.send(ch, %Message{ id: 0, payload: %RPC.Message{ method: "other", params: ["Hello"]}} )
   :nok
-  
+
 ```
   """
 
@@ -70,7 +70,8 @@ defmodule MOM.Channel.PointToPoint do
   Returns a list of subscribers that must be removed as they have exitted.
   """
   def dispatch([], msg), do: {:nok, []}
-  def dispatch([ {opts, f} | rest ], msg) do
+  def dispatch([ {id, f} | rest ], msg) do
+    #Logger.debug("Call to #{id}")
     ok = try do
       f.(msg)
     catch
@@ -84,12 +85,14 @@ defmodule MOM.Channel.PointToPoint do
         :nok
     end
 
+    #Logger.debug("Call to #{id}: #{inspect ok}")
+
     case ok do
       :ok ->
         {:ok, []}
       :exit -> # remove me, and any that later was said to be for removal
         {ok, toremove} = dispatch(rest, msg)
-        {ok, [{opts, f}] ++ toremove}
+        {ok, [{id, f}] ++ toremove}
       :nok ->
         dispatch(rest, msg)
     end
@@ -107,6 +110,7 @@ defmodule MOM.Channel.PointToPoint do
     {ok, state} = if Enum.count(state.subscribers) == 0 do
       {:empty, state}
     else
+      #Logger.debug("Dispatch to #{inspect state.subscribers}")
       {ok, toremove} = dispatch(state.subscribers, msg)
       subscribers = if toremove != [] do
         Enum.filter(state.subscribers, &(not &1 in toremove))
@@ -120,6 +124,7 @@ defmodule MOM.Channel.PointToPoint do
 
       {ok, %{ state | subscribers: subscribers}}
     end
+    #Logger.debug("End p2p #{inspect ok}")
 
     {:reply, ok, state}
   end

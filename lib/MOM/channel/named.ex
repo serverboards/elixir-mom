@@ -21,9 +21,9 @@ defmodule MOM.Channel.Named do
   false
   iex> Channel.Named.ensure_exists("my-channel")
   mch
-  iex> Channel.subscribe(mch, &Logger.info("Test" ++ (inspect &1)))
-  0
-  
+  iex> Channel.subscribe(mch, &Logger.info("Test" ++ (inspect &1))) != nil
+  true
+
 ```
   """
   def start_link do

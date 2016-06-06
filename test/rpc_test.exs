@@ -4,68 +4,79 @@ defmodule Serverboards.RPCTest do
   doctest MOM.RPC
   doctest MOM.RPC.Context, import: true
 
-	alias MOM.RPC
+  alias MOM.RPC
+	alias MOM.RPC.Endpoint
 
 	test "Simple RPC use" do
 		{:ok, rpc} = RPC.start_link
+    {:ok, caller } = Endpoint.Caller.start_link(rpc)
+    {:ok, mc } = Endpoint.MethodCaller.start_link(rpc)
 		RPC.tap( rpc )
 
-		RPC.add_method rpc, "echo", &(&1), async: true
+		Endpoint.MethodCaller.add_method mc, "echo", &(&1), async: true
 
 		# simple direct call
-		assert RPC.call(rpc, "echo", "hello", 0) == {:ok, "hello"}
+		assert Endpoint.Caller.call(caller, "echo", "hello") == {:ok, "hello"}
 
 		# simple call through chain
 		{:ok, worker} = RPC.start_link
+    {:ok, mcw} = Endpoint.MethodCaller.start_link(worker)
 		RPC.tap( worker )
 
-		RPC.add_method worker, "ping", fn _ ->
+		Endpoint.MethodCaller.add_method mcw, "ping", fn _ ->
 			"pong"
 		end
 		RPC.chain rpc, worker
-		assert RPC.call(rpc, "ping", [], 0) == {:ok, "pong"}
+		assert Endpoint.Caller.call(caller, "ping", []) == {:ok, "pong"}
 
 		# call unknown
-		assert RPC.call(rpc, "pong", nil, 0) == {:error, :unknown_method}
+		assert Endpoint.Caller.call(caller, "pong", nil) == {:error, :unknown_method}
 
 		# chain a second worker
 		{:ok, worker2} = RPC.start_link
+    {:ok, mcw2} = Endpoint.MethodCaller.start_link(worker2)
 		RPC.tap( worker2 )
-		RPC.add_method worker2, "pong", fn _ ->
+		Endpoint.MethodCaller.add_method mcw2, "pong", fn _ ->
 			"pong"
 		end
 
 		# still not chained, excpt
-		assert RPC.call(rpc, "pong", nil, 0) == {:error, :unknown_method}
+		assert Endpoint.Caller.call(caller, "pong", nil) == {:error, :unknown_method}
 
 		# now works
 		RPC.chain rpc, worker2
-		assert RPC.call(rpc, "pong", nil, 0) == {:ok, "pong"}
+		assert Endpoint.Caller.call(caller, "pong", nil) == {:ok, "pong"}
 	end
 
 
   test "RPC method with pattern matching" do
     {:ok, rpc} = RPC.start_link
+    {:ok, caller } = Endpoint.Caller.start_link(rpc)
+    {:ok, mc } = Endpoint.MethodCaller.start_link(rpc)
+
     RPC.tap( rpc )
 
-    RPC.add_method rpc, "echo", fn
+    Endpoint.MethodCaller.add_method mc, "echo", fn
       [_] -> "one item"
       [] -> "empty"
       %{ type: _ } -> "map with type"
     end, async: true
 
-    assert RPC.call(rpc, "echo", [], 1) == {:ok, "empty"}
-    assert RPC.call(rpc, "echo", [1], 1) == {:ok, "one item"}
-    assert RPC.call(rpc, "echo", %{}, 1) == {:error, :unknown_method}
-    assert RPC.call(rpc, "echo", %{ type: :test}, 1) == {:ok, "map with type"}
+    assert Endpoint.Caller.call(caller, "echo", []) == {:ok, "empty"}
+    assert Endpoint.Caller.call(caller, "echo", [1]) == {:ok, "one item"}
+    assert Endpoint.Caller.call(caller, "echo", %{}) == {:error, :bad_arity}
+    assert Endpoint.Caller.call(caller, "echo", %{ type: :test}) == {:ok, "map with type"}
   end
 
 
   test "dir aggregates from all method callers and even calls remotes" do
     {:ok, rpc} = RPC.start_link
+    {:ok, caller } = Endpoint.Caller.start_link(rpc)
+    {:ok, mc } = Endpoint.MethodCaller.start_link(rpc)
+
     RPC.tap( rpc )
 
-    RPC.add_method rpc, "echo", fn
+    Endpoint.MethodCaller.add_method mc, "echo", fn
       [_] -> "one item"
       [] -> "empty"
       %{ type: _ } -> "map with type"
@@ -80,17 +91,19 @@ defmodule Serverboards.RPCTest do
     {:ok, mc3} = RPC.MethodCaller.start_link
     RPC.MethodCaller.add_method mc2, "echo3", &(&1)
 
-    RPC.add_method_caller rpc, mc1
-    RPC.add_method_caller rpc, mc2
+    Endpoint.MethodCaller.add_method_caller mc, mc1
+    Endpoint.MethodCaller.add_method_caller mc, mc2
     RPC.MethodCaller.add_method_caller mc2, mc3
 
-    assert RPC.call(rpc, "dir", [], 1) == {:ok, ~w(dir echo echo1 echo2 echo3)}
+    assert Endpoint.Caller.call(caller, "dir", []) == {:ok, ~w(dir echo echo1 echo2 echo3)}
   end
 
   test "RPC function method callers" do
     {:ok, rpc} = RPC.start_link
+    {:ok, caller } = Endpoint.Caller.start_link(rpc)
+    {:ok, mc } = Endpoint.MethodCaller.start_link(rpc)
 
-    RPC.add_method_caller rpc, fn msg ->
+    Endpoint.MethodCaller.add_method_caller mc, fn msg ->
       case msg.method do
         "dir" ->
           {:ok, ["dir", "echo"]}
@@ -101,7 +114,7 @@ defmodule Serverboards.RPCTest do
       end
     end
 
-    assert RPC.call(rpc, "dir", [], 1) == {:ok, ~w(dir echo)}
-    assert RPC.call(rpc, "echo", [1,2,3], 1) == {:ok, [1,2,3]}
+    assert Endpoint.Caller.call(caller, "dir", []) == {:ok, ~w(dir echo)}
+    assert Endpoint.Caller.call(caller, "echo", [1,2,3]) == {:ok, [1,2,3]}
   end
 end
