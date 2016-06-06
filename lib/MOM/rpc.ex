@@ -71,9 +71,7 @@ defmodule MOM.RPC do
   defstruct [
     request: nil, # gets inside the MOM,
     reply: nil, # gets out of the MOM.
-    uuid: nil,
     pid: nil,
-    reply_id: nil, # subscription for reply, to unsubscribe
     method_caller: nil,
     context: nil
   ]
@@ -101,14 +99,12 @@ defmodule MOM.RPC do
         context
     end
 
-    reply_id = Channel.subscribe(reply, &GenServer.cast( pid, {:reply, &1} ) )
+    Channel.subscribe(reply, &GenServer.cast( pid, {:reply, &1} ) )
 
     rpc = %RPC{
       request: request,
       reply: reply,
-      uuid: UUID.uuid4(),
       pid: pid,
-      reply_id: reply_id,
       method_caller: method_caller,
       context: context
     }
@@ -146,7 +142,6 @@ defmodule MOM.RPC do
   def debug(rpc) do
     %{
       method_caller: RPC.MethodCaller.debug(rpc.method_caller),
-      uuid: rpc.uuid
     }
   end
 
@@ -158,14 +153,9 @@ defmodule MOM.RPC do
   end
 
 
-  def tap(%RPC{ uuid: uuid, request: request, reply: reply}, id \\ nil) do
-    if id do
-      Tap.tap(request, "#{id}>")
-      Tap.tap(reply, "#{id}<")
-    else
-      Tap.tap(request, "#{uuid}>")
-      Tap.tap(reply, "#{uuid}<")
-    end
+  def tap(%RPC{ request: request, reply: reply}, id \\ nil) do
+    Tap.tap(request, "#{id}>")
+    Tap.tap(reply, "#{id}<")
   end
 
   def call(rpc, method, params, id) do
