@@ -5,14 +5,20 @@ defmodule MOM.RPC.Client do
   It can be a TCP/Websocket client that need to be authenticated, or
   Command clients that are given authentication credentials at creation.
 
+  As the functions are quite clear, it implements all necesary proxy functions so
+  that its easy to add functions to the method caller, call functions at the remote
+  server and parse lines from it.
+
   """
 
   alias MOM.RPC.Endpoint
   alias MOM.RPC
 
   defstruct [
-    left: nil,
-    right: nil,
+    json: nil,
+    method_caller: nil,
+    caller: nil,
+    context: nil
   ]
   @doc ~S"""
   Starts a communication with a client.
@@ -60,35 +66,51 @@ defmodule MOM.RPC.Client do
 
     {:ok, json} = Endpoint.JSON.start_link(rpc_a, rpc_b, options)
     {:ok, method_caller} = Endpoint.MethodCaller.start_link(rpc_b, options ++ [method_caller: method_caller])
-    {:ok, caller} = Endpoint.Caller.start_link(rpc_a, options)
+    {:ok, caller} = Endpoint.Caller.start_link(rpc_a, [])
 
     RPC.tap(rpc_a, "A")
     RPC.tap(rpc_b, "B")
 
-    {:ok, %{
-      left_in: json,
-      left_out: json,
-      right_in: method_caller,
-      right_out: caller,
+    {:ok, %RPC.Client{
+      json: json,
+      method_caller: method_caller,
+      caller: caller,
       context: context
     }}
   end
 
   def stop(client, reason \\ :normal) do
-    Endpoint.JSON.stop(client.left_in, reason)
-    Endpoint.MethodCaller.stop(client.right_in, reason)
-    Endpoint.Caller.stop(client.right_out, reason)
+    Endpoint.JSON.stop(client.json, reason)
+    Endpoint.MethodCaller.stop(client.method_caller, reason)
+    Endpoint.Caller.stop(client.caller, reason)
     RPC.Context.stop(client.context, reason)
   end
 
+  # to JSON
   def parse_line(client, line) do
-    Endpoint.JSON.parse_line(client.left_in, line)
+    Endpoint.JSON.parse_line(client.json, line)
   end
 
-  def event_to_remote(client, method, param) do
-    Endpoint.Caller.event(client.right_out, method, param)
+  # For caller
+  def event(client, method, param) do
+    Endpoint.Caller.event(client.caller, method, param)
+  end
+  def call(client, method, param) do
+    Endpoint.Caller.call(client.caller, method, param)
+  end
+  def cast(client, method, param, cb) do
+    Endpoint.Caller.cast(client.caller, method, param, cb)
   end
 
+  # For method caller
+  def add_method(client, name, f, options \\ []) do
+    Endpoint.MethodCaller.add_method(client.method_caller, name, f, options)
+  end
+  def add_method_caller(client, mc, options \\ []) do
+    Endpoint.MethodCaller.add_method_caller(client.method_caller, mc, options)
+  end
+
+  # for context
   def get(client, what, default \\ nil) do
     case what do
       :left -> client.left_in
@@ -101,7 +123,6 @@ defmodule MOM.RPC.Client do
         RPC.Context.get client.context, what, default
     end
   end
-
   def set(client, what, value) do
     RPC.Context.set client.context, what, value
   end

@@ -45,9 +45,7 @@ defmodule Serverboards.RPC.ClientTest do
   test "Call to client" do
     {:ok, client} = Client.start_link writef: :context
 
-    caller = Client.get client, :right_out
-
-    MOM.RPC.Endpoint.Caller.cast caller, "dir", [], fn {:ok, []} ->
+    MOM.RPC.Client.cast client, "dir", [], fn {:ok, []} ->
       Client.set client, :called, true
     end
     :timer.sleep(20)
@@ -65,7 +63,7 @@ defmodule Serverboards.RPC.ClientTest do
     assert (Client.get client, :called) == true
 
 
-    Client.event_to_remote client, "auth", ["basic"]
+    Client.event client, "auth", ["basic"]
     :timer.sleep(20)
     {:ok, js} = JSON.decode(Client.get client, :last_line)
     assert Map.get(js,"method") == "auth"
@@ -90,6 +88,22 @@ defmodule Serverboards.RPC.ClientTest do
     :timer.sleep(200)
     {:ok, js} = JSON.decode(Client.get client, :last_line)
     assert Map.get(js,"error") == "unknown_method"
+
+    Client.stop(client)
+  end
+
+  test "As method caller" do
+    {:ok, client} = Client.start_link writef: :context
+
+    Client.add_method client, "echo", fn x -> x end
+    Client.add_method_caller client, fn msg -> msg.payload.params end
+
+
+    {:ok, json} = JSON.encode(%{ method: "echo", params: [1,2,3], id: 1 })
+    assert (Client.parse_line client, json) == :ok
+    :timer.sleep(200)
+    {:ok, js} = JSON.decode(Client.get client, :last_line)
+    assert Map.get(js,"result") == [1,2,3]
 
     Client.stop(client)
   end
