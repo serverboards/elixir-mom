@@ -59,7 +59,7 @@ defmodule MOM.RPC.Client do
     RPC.MethodCaller.add_method method_caller, "version", fn [] ->
       Mix.Project.config()[:version]
     end
-    RPC.MethodCaller.add_method method_caller, "ping", fn msg -> msg end
+    RPC.MethodCaller.add_method method_caller, "ping", fn [msg] -> msg end
 
     {:ok, rpc_a } = RPC.start_link name: :a
     {:ok, rpc_b } = RPC.start_link name: :b

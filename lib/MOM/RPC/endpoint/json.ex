@@ -132,6 +132,9 @@ defmodule MOM.RPC.Endpoint.JSON do
       })
   end
   # Error from JSON
+  defp error_in(client, "unknown_method", id) do # translate to atom
+    error_in(client, :unknown_method, id)
+  end
   defp error_in(client, error, id) do
     Channel.send(client.rpc_in.reply, %MOM.Message{
       id: id,
@@ -142,6 +145,7 @@ defmodule MOM.RPC.Endpoint.JSON do
   defp write_map(%{writef: writef}, map) do
     {:ok, line} = JSON.encode( map )
     writef.(line<>"\n")
+    :ok
   end
 
 end
