@@ -11,11 +11,12 @@ defmodule MOM.RPC.Client do
   and do the RPCs.
   """
   defstruct [
-    to_client: nil,
-    to_serverboards: nil,
+    to_remote: nil,
+    to_local: nil,
     options: %{},
     writef: nil,
-    context: nil
+    context: nil,
+    maxid_remote: 0
   ]
   alias MOM
   alias MOM.RPC
@@ -92,13 +93,6 @@ defmodule MOM.RPC.Client do
   end
 
   @doc ~S"""
-  Call event from serverboards to client
-  """
-  def event_to_client(client, method, params) do
-    GenServer.cast(client, {:event_to_client, method, params})
-  end
-
-  @doc ~S"""
   Reply to a previous call to client. This is the answer from "on_call".
   """
   def reply(client, result, id) do
@@ -135,8 +129,8 @@ defmodule MOM.RPC.Client do
 
   There are special keys, that get info from the client itself:
 
-  * `:to_serverboards`
-  * `:to_client`
+  * `:to_local`
+  * `:to_remote`
 
   ## Example
 
@@ -152,11 +146,11 @@ defmodule MOM.RPC.Client do
 
 ```
   iex> {:ok, client} = start_link writef: :context
-  iex> %MOM.RPC{} = get client, :to_serverboards
-  iex> %MOM.RPC{} = get client, :to_client
+  iex> %MOM.RPC{} = get client, :to_local
+  iex> %MOM.RPC{} = get client, :to_remote
   iex> true # make exdoc happy
   true
-  
+
 ```
   """
   def get(client, key, default \\ nil) do
@@ -206,15 +200,30 @@ defmodule MOM.RPC.Client do
     GenServer.cast(client, {:write_line, res})
   end
 
-  # calls a method in the client
+  @doc ~S"""
+  Call event in the remote client
+  """
+  def event_to_remote(client, method, params) do
+    GenServer.cast(client, {:event_to_remote, method, params})
+  end
+
+
+  @doc ~S"""
+  Calls a method in the remote client
+
+  Id can be:
+   number - an id number
+   nil - Its an event, no id for reply
+   :next - Uses next internal id
+  """
   def call_to_remote(client, method, params, id) do
     jmsg = %{ method: method, params: params }
 
     # maybe has id, maybe not.
-    jmsg = if id do
-      Map.put( jmsg , :id, id )
-    else
-      jmsg
+    jmsg = case id do
+      nil -> jmsg
+      :next -> Map.put( jmsg , :id, GenServer.call(client, {:next_remote_id}))
+      id -> Map.put( jmsg , :id, id )
     end
 
     # encode and send
@@ -225,8 +234,8 @@ defmodule MOM.RPC.Client do
   ## server impl
   def init options do
     {:ok, context} = MOM.RPC.Context.start_link
-    {:ok, to_client} = MOM.RPC.start_link context: context, method_caller: false
-    {:ok, to_serverboards} = MOM.RPC.start_link context: context
+    {:ok, to_remote} = MOM.RPC.start_link context: context, method_caller: false
+    {:ok, to_local} = MOM.RPC.start_link context: context
 
     writef = case Keyword.get(options, :writef) do
       :context -> fn line ->
@@ -238,10 +247,11 @@ defmodule MOM.RPC.Client do
 
 
     client = %MOM.RPC.Client{
-      to_client: to_client,
-      to_serverboards: to_serverboards,
+      to_remote: to_remote,
+      to_local: to_local,
       writef: writef,
-      context: context
+      context: context,
+      maxid_remote: 0
     }
 
     name = with nil <- Keyword.get(options, :name),
@@ -253,12 +263,12 @@ defmodule MOM.RPC.Client do
 
     me=self()
 
-    MOM.Channel.subscribe(to_client.request, fn msg ->
+    MOM.Channel.subscribe(to_remote.request, fn msg ->
       RPC.Client.call_to_remote(me, msg.payload.method, msg.payload.params, msg.id)
       :ok
     end)
 
-    ts = client.to_serverboards
+    ts = client.to_local
     RPC.add_method ts, "version", fn _ ->
       Keyword.get Serverboards.Mixfile.project, :version
     end
@@ -284,13 +294,13 @@ defmodule MOM.RPC.Client do
 
   def handle_call({:tap}, _from, client) do
     name = Client.get client, :name
-    MOM.RPC.tap(client.to_serverboards, ">#{name}")
-    MOM.RPC.tap(client.to_client, "<#{name}")
+    MOM.RPC.tap(client.to_local, ">#{name}")
+    MOM.RPC.tap(client.to_remote, "<#{name}")
     {:reply, :ok, client}
   end
   def handle_call({:call, method, params, id, callback}, _from, client) do
     #Logger.debug("Call start #{inspect method}")
-    ret = case RPC.cast(client.to_serverboards, method, params, id, callback) do
+    ret = case RPC.cast(client.to_local, method, params, id, callback) do
       :nok ->
         callback.({ :error, :unknown_method })
       :ok -> :ok
@@ -299,14 +309,14 @@ defmodule MOM.RPC.Client do
     {:reply, ret, client}
   end
   def handle_call({:reply, result, id}, _from, client) do
-    ret = MOM.Channel.send(client.to_client.reply, %MOM.Message{
+    ret = MOM.Channel.send(client.to_remote.reply, %MOM.Message{
       id: id,
       payload: result
       })
     {:reply, ret, client}
   end
   def handle_call({:error, result, id}, _form, client) do
-    ret = MOM.Channel.send(client.to_client.reply, %MOM.Message{
+    ret = MOM.Channel.send(client.to_remote.reply, %MOM.Message{
       id: id,
       error: result
       })
@@ -316,11 +326,11 @@ defmodule MOM.RPC.Client do
     ret = RPC.Context.set(client.context, key, value)
     {:reply, ret, client}
   end
-  def handle_call({:get, :to_client, nil}, _from, client) do
-    {:reply, client.to_client, client}
+  def handle_call({:get, :to_remote, nil}, _from, client) do
+    {:reply, client.to_remote, client}
   end
-  def handle_call({:get, :to_serverboards, nil}, _from, client) do
-    {:reply, client.to_serverboards, client}
+  def handle_call({:get, :to_local, nil}, _from, client) do
+    {:reply, client.to_local, client}
   end
   def handle_call({:get, key, default}, _from, client) do
     ret = RPC.Context.get(client.context, key, default)
@@ -328,11 +338,16 @@ defmodule MOM.RPC.Client do
   end
   def handle_call({:debug}, _from, client) do
     {:reply, %{
-      to_client: RPC.debug(client.to_client),
-      to_serverboards: RPC.debug(client.to_serverboards),
+      to_remote: RPC.debug(client.to_remote),
+      to_local: RPC.debug(client.to_local),
       context: RPC.Context.debug(client.context),
       options: client.options
       }, client}
+  end
+  def handle_call({:next_remote_id}, _from, client) do
+    {:reply, client.maxid_remote,
+      %{ client | maxid_remote: client.maxid_remote +1 }
+    }
   end
 
   ~S"""
@@ -347,11 +362,11 @@ defmodule MOM.RPC.Client do
     {:noreply, client}
   end
   def handle_cast({:event, method, params}, client) do
-    RPC.event(client.to_serverboards, method, params)
+    RPC.event(client.to_local, method, params)
     {:noreply,  client}
   end
-  def handle_cast({:event_to_client, method, params}, client) do
-    RPC.event(client.to_client, method, params)
+  def handle_cast({:event_to_remote, method, params}, client) do
+    RPC.event(client.to_remote, method, params)
     {:noreply,  client}
   end
 end

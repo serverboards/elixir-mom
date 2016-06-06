@@ -43,9 +43,9 @@ defmodule Serverboards.RPC.ClientTest do
   test "Call to client" do
     {:ok, client} = Client.start_link writef: :context
 
-    to_client = Client.get client, :to_client
+    to_remote = Client.get client, :to_remote
 
-    MOM.RPC.cast to_client, "dir", [], 1, fn {:ok, []} ->
+    MOM.RPC.cast to_remote, "dir", [], 1, fn {:ok, []} ->
       Client.set client, :called, true
     end
     :timer.sleep(20)
@@ -63,7 +63,7 @@ defmodule Serverboards.RPC.ClientTest do
     assert (Client.get client, :called) == true
 
 
-    Client.event_to_client client, "auth", ["basic"]
+    Client.event_to_remote client, "auth", ["basic"]
     :timer.sleep(20)
     {:ok, js} = JSON.decode(Client.get client, :last_line)
     assert Map.get(js,"method") == "auth"
