@@ -78,12 +78,25 @@ defmodule MOM.RPC.Endpoint.JSON do
   end
 
   # Call from JSON
-  defp call_out(client, method, params, id) do
+  defp call_out(client, method, params, nil) do
     Channel.send(client.rpc_out.request, %MOM.Message{
       payload: %MOM.RPC.Message{ method: method, params: params },
-      id: id
       } )
     :ok
+  end
+  defp call_out(client, method, params, id) do
+    case Channel.send(client.rpc_out.request, %MOM.Message{
+      payload: %MOM.RPC.Message{ method: method, params: params },
+      id: id
+      } ) do
+        :ok -> :ok
+        :nok ->
+          Channel.send(client.rpc_out.reply, %MOM.Message{
+            id: id,
+            error: :unknown_method
+            })
+          :ok
+    end
   end
   # reply to JSON
   defp reply_out(client, result, id) do
