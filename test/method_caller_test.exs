@@ -168,10 +168,12 @@ defmodule Serverboards.MethodCallerTest do
   # Checks a strange bug, explained at MethodCaller.cast_mc
   test "Bug RPC mc :nok, :ok" do
     {:ok, rpc} = RPC.start_link
+    {:ok, rpc_mc} = RPC.Endpoint.MethodCaller.start_link(rpc)
+    {:ok, caller} = RPC.Endpoint.Caller.start_link(rpc)
     {:ok, mc} = RPC.MethodCaller.start_link
     {:ok, mc2} = RPC.MethodCaller.start_link
 
-    RPC.add_method_caller rpc, mc
+    RPC.Endpoint.MethodCaller.add_method_caller rpc_mc, mc
     #RPC.add_method_caller rpc, mc2
 
     RPC.MethodCaller.add_method mc, "foo", fn _ ->
@@ -189,6 +191,6 @@ defmodule Serverboards.MethodCallerTest do
       {:ok, :ok}
     end
 
-    assert (RPC.call rpc, "test", [], 1) == {:ok, :ok}
+    assert (RPC.Endpoint.Caller.call caller, "test", []) == {:ok, :ok}
   end
 end

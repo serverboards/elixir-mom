@@ -43,8 +43,8 @@ defmodule MOM.RPC.Context do
     Agent.start_link fn -> %{} end, options
   end
 
-  def stop(ma) do
-    Agent.stop(ma)
+  def stop(ma, reason \\ :normal) do
+    Agent.stop(ma, reason)
   end
 
   def debug(pid) do

@@ -21,9 +21,7 @@ defprotocol MOM.Channel do
   iex> alias MOM.{Message, Channel}
   iex> {:ok, ch} = Channel.Broadcast.start_link
   iex> Channel.subscribe(ch, fn msg -> Logger.info("Message1 #{inspect msg}") end)
-  0
   iex> Channel.subscribe(ch, fn msg -> Logger.info("Message2  #{inspect msg}") end)
-  1
   iex> Channel.send(ch, %Message{ payload: %{method: "echo", param: "Hello world" }})
   :ok
   iex> Channel.unsubscribe(ch, 1)
@@ -165,8 +163,14 @@ defmodule MOM.Channel.Base do
         GenServer.call(channel.pid, {:subscribe, subscriber, options})
       end
       def subscribe(orig, dest, options) do
-        Logger.debug("Subscribe #{inspect orig} send to #{inspect dest}")
-        subscribe(orig, &MOM.Channel.send(dest, &1), options)
+        #Logger.debug("Subscribe #{inspect orig} send to #{inspect dest}")
+        subscribe(orig, fn msg ->
+          ret = MOM.Channel.send(dest, msg)
+          #Logger.debug("Chain result #{inspect ret}")
+          ret
+        end, options)
+
+        #&MOM.Channel.send(dest, &1), options)
       end
 
 
@@ -183,7 +187,7 @@ defmodule MOM.Channel.Base do
       """
       def init(:ok) do
         {:ok, %{
-          maxid: 0,
+          maxid: :rand.uniform(100) * 1000,
           subscribers: [] # each {id, fn}, almost a map, but with ordering. id used to unsubscribe.
           }}
       end
