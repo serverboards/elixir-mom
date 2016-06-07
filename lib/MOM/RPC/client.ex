@@ -69,8 +69,10 @@ defmodule MOM.RPC.Client do
     {:ok, method_caller} = Endpoint.MethodCaller.start_link(rpc_b, options ++ [method_caller: method_caller])
     {:ok, caller} = Endpoint.Caller.start_link(rpc_a, [])
 
-    RPC.tap(rpc_a, "A")
-    RPC.tap(rpc_b, "B")
+    if options[:tap] do
+      RPC.tap(rpc_a, "A")
+      RPC.tap(rpc_b, "B")
+    end
 
     {:ok, %RPC.Client{
       json: json,
