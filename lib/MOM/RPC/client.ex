@@ -9,6 +9,7 @@ defmodule MOM.RPC.Client do
   that its easy to add functions to the method caller, call functions at the remote
   server and parse lines from it.
 
+  There is a diagram at /docs/RPC-clients.svg.
   """
 
   alias MOM.RPC.Endpoint
