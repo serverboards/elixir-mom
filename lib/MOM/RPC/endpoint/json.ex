@@ -85,18 +85,29 @@ defmodule MOM.RPC.Endpoint.JSON do
     :ok
   end
   defp call_out(client, method, params, id) do
-    case Channel.send(client.rpc_out.request, %MOM.Message{
-      payload: %MOM.RPC.Message{ method: method, params: params },
-      id: id
-      } ) do
-        :ok -> :ok
-        :nok ->
-          Channel.send(client.rpc_out.reply, %MOM.Message{
-            id: id,
-            error: :unknown_method
-            })
-          :ok
-    end
+    # This must be a task as the request can request back something before
+    # completing.
+    Task.start_link(fn ->
+      case Channel.send(client.rpc_out.request, %MOM.Message{
+        payload: %MOM.RPC.Message{ method: method, params: params },
+        id: id
+        } ) do
+          :ok -> :ok
+          :nok ->
+            Channel.send(client.rpc_out.reply, %MOM.Message{
+              id: id,
+              error: :unknown_method
+              })
+            :ok
+          :empty ->
+            Channel.send(client.rpc_out.reply, %MOM.Message{
+              id: id,
+              error: :unknown_method
+              })
+            :ok
+      end
+    end)
+    :ok
   end
   # reply to JSON
   defp reply_out(client, result, id) do
