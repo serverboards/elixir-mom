@@ -74,12 +74,16 @@ defmodule MOM.RPC.Client do
       RPC.tap(rpc_b, "B")
     end
 
-    {:ok, %RPC.Client{
+    client = %RPC.Client{
       json: json,
       method_caller: method_caller,
       caller: caller,
       context: context
-    }}
+    }
+
+    RPC.Context.set context, :client, client
+
+    {:ok, client}
   end
 
   def stop(client, reason \\ :normal) do
