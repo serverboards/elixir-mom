@@ -90,7 +90,7 @@ defmodule MOM.RPC.Endpoint.Caller do
       } )
     case ok do
       :nok -> # Could not send it
-        cb.({:error, :unkonwn_method})
+        cb.({:error, :unknown_method})
         {:noreply, status}
       :ok ->
         {:noreply, %{ status |
