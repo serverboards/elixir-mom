@@ -19,7 +19,8 @@ defmodule MOM.RPC.Client do
     json: nil,
     method_caller: nil,
     caller: nil,
-    context: nil
+    context: nil,
+    pid: nil
   ]
   @doc ~S"""
   Starts a communication with a client.
@@ -56,18 +57,24 @@ defmodule MOM.RPC.Client do
       options
     end
 
-    {:ok, method_caller} = RPC.MethodCaller.start_link
-    RPC.MethodCaller.add_method method_caller, "version", fn [] ->
-      Mix.Project.config()[:version]
-    end
-    RPC.MethodCaller.add_method method_caller, "ping", fn [msg] -> msg end
+    {:ok, pid} = Agent.start_link(fn ->
+      {:ok, method_caller} = RPC.MethodCaller.start_link
+      RPC.MethodCaller.add_method method_caller, "version", fn [] ->
+        Mix.Project.config()[:version]
+      end
+      RPC.MethodCaller.add_method method_caller, "ping", fn [msg] -> msg end
 
-    {:ok, rpc_a } = RPC.start_link name: :a
-    {:ok, rpc_b } = RPC.start_link name: :b
+      {:ok, rpc_a } = RPC.start_link name: :a
+      {:ok, rpc_b } = RPC.start_link name: :b
 
-    {:ok, json} = Endpoint.JSON.start_link(rpc_a, rpc_b, options)
-    {:ok, method_caller} = Endpoint.MethodCaller.start_link(rpc_b, options ++ [method_caller: method_caller])
-    {:ok, caller} = Endpoint.Caller.start_link(rpc_a, [])
+      {:ok, json} = Endpoint.JSON.start_link(rpc_a, rpc_b, options)
+      {:ok, method_caller} = Endpoint.MethodCaller.start_link(rpc_b, options ++ [method_caller: method_caller])
+      {:ok, caller} = Endpoint.Caller.start_link(rpc_a, [])
+
+      {rpc_a, rpc_b, json, method_caller, caller}
+    end)
+
+    {rpc_a, rpc_b, json, method_caller, caller} = Agent.get(pid, &(&1))
 
     if options[:tap] do
       RPC.tap(rpc_a, "A")
@@ -78,7 +85,8 @@ defmodule MOM.RPC.Client do
       json: json,
       method_caller: method_caller,
       caller: caller,
-      context: context
+      context: context,
+      pid: pid
     }
 
     RPC.Context.set context, :client, client
@@ -87,10 +95,7 @@ defmodule MOM.RPC.Client do
   end
 
   def stop(client, reason \\ :normal) do
-    Endpoint.JSON.stop(client.json, reason)
-    Endpoint.MethodCaller.stop(client.method_caller, reason)
-    Endpoint.Caller.stop(client.caller, reason)
-    RPC.Context.stop(client.context, reason)
+    Agent.stop(client.pid, reason)
   end
 
   # to JSON
