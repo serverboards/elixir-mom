@@ -126,7 +126,7 @@ defmodule MOM.RPC.Client do
       :right_in -> client.right_in
       :right_out -> client.right_out
       :context -> client.context
-      other ->
+      _other ->
         RPC.Context.get client.context, what, default
     end
   end

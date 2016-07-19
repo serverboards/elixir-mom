@@ -155,6 +155,10 @@ defmodule MOM.Channel.Base do
         {:ok, %{ __struct__: __MODULE__, pid: pid } }
       end
 
+      def stop(pid) do
+        GenServer.stop(pid)
+      end
+
       @doc ~S"""
       Subscribes to a channel.
       """
@@ -211,7 +215,7 @@ defmodule MOM.Channel.Base do
         }}
       end
 
-      defoverridable [init: 1, subscribe: 3, unsubscribe: 2, start_link: 0]
+      defoverridable [init: 1, stop: 1, subscribe: 3, unsubscribe: 2, start_link: 0]
     end
   end
 end

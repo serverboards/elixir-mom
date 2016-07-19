@@ -37,7 +37,7 @@ defmodule MOM.RPC.Endpoint.JSON do
     {:ok, client}
   end
 
-  def stop(json, reason) do
+  def stop(_json, _reason) do
     :ok
   end
 

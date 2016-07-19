@@ -76,7 +76,7 @@ defmodule MOM.RPC do
 
   alias MOM.Channel
 
-  def start_link(options \\ []) do
+  def start_link(_options \\ []) do
     {:ok, request} = Channel.PointToPoint.start_link
     {:ok, reply} = Channel.PointToPoint.start_link
     {:ok, %MOM.RPC{ request: request, reply: reply } }
@@ -86,8 +86,8 @@ defmodule MOM.RPC do
   Stops the server
   """
   def stop(rpc) do
-    MOM.Channel.stop(rpc.request)
-    MOM.Channel.stop(rpc.reply)
+    MOM.Channel.PointToPoint.stop(rpc.request)
+    MOM.Channel.PointToPoint.stop(rpc.reply)
   end
 
   @doc ~S"""

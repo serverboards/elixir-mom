@@ -195,7 +195,7 @@ defmodule MOM.RPC.MethodCaller do
 ```
   """
   def add_method_caller(pid, pid, _) do
-    raise Exception, "Cant add a method caller to itself."
+    raise RuntimeError, "Cant add a method caller to itself."
   end
   def add_method_caller(pid, nmc, options) when is_pid(pid) do
     #Logger.debug("Add caller #{inspect nmc} to #{inspect pid}")
