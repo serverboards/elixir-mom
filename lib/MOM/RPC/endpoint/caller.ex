@@ -70,8 +70,6 @@ defmodule MOM.RPC.Endpoint.Caller do
     end
     case status.reply[msg.id] do
       f when is_function(f) -> # used at cast
-        require Logger
-        Logger.info("Call result #{inspect f} #{inspect result}")
         f.( result )
       {pid, _} = from when is_pid(pid) -> # used at call
         GenServer.reply( from, result )
