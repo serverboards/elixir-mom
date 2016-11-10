@@ -117,4 +117,17 @@ defmodule Serverboards.RPCTest do
     assert Endpoint.Caller.call(caller, "dir", []) == {:ok, ~w(dir echo)}
     assert Endpoint.Caller.call(caller, "echo", [1,2,3]) == {:ok, [1,2,3]}
   end
+
+  test "Long running RPC call" do
+    {:ok, rpc} = RPC.start_link
+    {:ok, caller } = Endpoint.Caller.start_link(rpc)
+    {:ok, mc } = Endpoint.MethodCaller.start_link(rpc)
+
+    Endpoint.MethodCaller.add_method mc, "wait", fn [] ->
+      Process.sleep(10000)
+      :ok
+    end
+
+    assert Endpoint.Caller.call(caller, "wait", []) == {:ok, :ok}
+  end
 end

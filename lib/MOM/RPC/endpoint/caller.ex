@@ -18,8 +18,8 @@ defmodule MOM.RPC.Endpoint.Caller do
   end
 
 
-  def call(client, method, params) do
-    GenServer.call(client.pid, {:call, method, params})
+  def call(client, method, params, timeout \\ 60_000) do
+    GenServer.call(client.pid, {:call, method, params}, timeout)
   end
 
   def cast(client, method, params, cb) do
