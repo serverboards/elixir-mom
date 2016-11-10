@@ -58,8 +58,8 @@ defmodule MOM.Channel.PointToPoint do
   Avaialble options are:
   * :all -- Sends to all channels, behaving as a broadcast channel.
   """
-  def send(channel, %Message{} = message, options) do
-    GenServer.call(channel.pid, {:send, message, options})
+  def send(channel, %Message{} = message, options, timeout) do
+    GenServer.call(channel.pid, {:send, message, options}, timeout)
   end
 
   ## Server impl
@@ -75,8 +75,9 @@ defmodule MOM.Channel.PointToPoint do
     ok = try do
       f.(msg)
     catch
-      :exit, _ ->
-        Logger.warn("Message #{inspect msg} to p2p channel into a exitted process. Removing listener.")
+      :exit, { cause, where} ->
+        Logger.warn("Message #{inspect msg} to p2p channel into a exitted process. Removing listener. #{inspect cause}")
+        Logger.debug(inspect where)
         :exit
     rescue
       e ->

@@ -46,7 +46,6 @@ defmodule MOM.RPC.Endpoint.Caller do
     ok = MOM.Channel.send(status.rpc_out.request, %MOM.Message{ payload:
       %MOM.RPC.Message{ method: method, params: params}, id: id
       } )
-    Logger.debug("Return from cast: #{inspect ok}")
     case ok do
       :empty ->
         {:reply, {:error, :unknown_method}, status}
@@ -86,6 +85,7 @@ defmodule MOM.RPC.Endpoint.Caller do
     ok = MOM.Channel.send(status.rpc_out.request, %MOM.Message{ payload:
       %MOM.RPC.Message{ method: method, params: params}, id: id
       } )
+    #Logger.debug("Return from cast: #{inspect ok}")
     case ok do
       :nok -> # Could not send it
         cb.({:error, :unknown_method})

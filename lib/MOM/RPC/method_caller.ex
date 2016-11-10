@@ -317,7 +317,7 @@ defmodule MOM.RPC.MethodCaller do
         res -> res
       end
     end)
-    Task.await async
+    Task.await async, 60_000
   end
 
   @doc ~S"""
@@ -496,7 +496,7 @@ defmodule MOM.RPC.MethodCaller do
         end
       end
 
-      Task.await(task)
+      Task.await(task, 60_000)
     else
       # skip, guards not passed
       cast_mc(t, method, params, context, guards, cb)

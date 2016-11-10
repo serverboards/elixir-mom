@@ -37,9 +37,9 @@ defmodule MOM.Channel.Broadcast do
 ```
 
   """
-  def send(channel, %Message{} = message, options) do
+  def send(channel, %Message{} = message, options, timeout) do
     if Keyword.get(options, :sync, false) do
-      GenServer.call(channel.pid, {:send, message, options})
+      GenServer.call(channel.pid, {:send, message, options}, timeout)
     else
       GenServer.cast(channel.pid, {:send, message, options})
     end

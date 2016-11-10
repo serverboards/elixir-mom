@@ -1,3 +1,5 @@
+require Logger
+
 defmodule MOM.RPC.Client do
   @moduledoc ~S"""
   Standard layout for clients: JSON, Method caller and manual caller.
@@ -51,7 +53,10 @@ defmodule MOM.RPC.Client do
 
     options = options ++ [context: context]
     options = if options[:writef] == :context do
-      writef = &RPC.Context.set(context, :last_line, &1)
+      writef = fn msg ->
+        Logger.debug("RPC Context debug: #{inspect msg}")
+        RPC.Context.set(context, :last_line, msg)
+      end
       [writef: writef] ++ options
     else
       options

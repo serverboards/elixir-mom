@@ -87,12 +87,34 @@ defmodule MOM.RPC.Endpoint.JSON do
   defp call_out(client, method, params, id) do
     # This must be a task as the request can request back something before
     # completing.
-    Task.start_link(fn ->
-      case Channel.send(client.rpc_out.request, %MOM.Message{
-        payload: %MOM.RPC.Message{ method: method, params: params },
-        id: id
-        } ) do
-          :ok -> :ok
+
+    # It is not linked, as if fail (timeout), can throw away all the clients,
+    # not just the caller client. As its not linked only this message will be
+    # failed, and it will be logged properly
+    Task.start(fn ->
+      #Logger.debug("Call out!")
+      send_result = try do
+        Channel.send(
+            client.rpc_out.request,
+            %MOM.Message{
+              payload: %MOM.RPC.Message{
+                method: method,
+                params: params
+              },
+              id: id
+            },
+            [],
+            60_000 # long timeout, but not forever.
+          )
+      catch
+        :exit, {:timeout, _} ->
+          Logger.error("Timeout processing client request for method: #{inspect method}")
+          :timeout
+      end
+
+      case send_result do
+          :ok ->
+            :ok
           :nok ->
             Channel.send(client.rpc_out.reply, %MOM.Message{
               id: id,
@@ -105,6 +127,12 @@ defmodule MOM.RPC.Endpoint.JSON do
               error: :unknown_method
               })
             :ok
+          :timeout ->
+            Channel.send(client.rpc_out.reply, %MOM.Message{
+              id: id,
+              error: "timeout"
+              })
+            :nok
       end
     end)
     :ok

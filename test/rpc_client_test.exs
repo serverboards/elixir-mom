@@ -107,4 +107,36 @@ defmodule Serverboards.RPC.ClientTest do
 
     Client.stop(client)
   end
+
+  test "Client calls a long running method on server method caller" do
+    {:ok, client} = Client.start_link writef: :context
+
+    Client.add_method_caller client, fn _msg ->
+      :timer.sleep(7000) # 7s, 5s is the default timeout, 6 on the limit to detect it. 7 always detects it
+      {:ok, :ok}
+    end
+
+    # call a long runing function on server
+    {:ok, json} = JSON.encode(%{ method: "sleep", params: [], id: 1 })
+    assert (Client.parse_line client, json) == :ok
+
+    # should patiently wait
+    for _i <- 1..8 do
+      :timer.sleep(1_000)
+      case (Client.get client, :last_line) do
+        nil ->
+          true
+        last_line ->
+          #Logger.debug(last_line)
+          {:ok, js} = JSON.decode(last_line)
+          assert Map.get(js, "error", false) == false
+          true
+      end
+    end
+    {:ok, js} = JSON.decode(Client.get client, :last_line)
+    #Logger.debug(inspect js)
+    assert Map.get(js,"result") == "ok"
+
+    Client.stop(client)
+  end
 end

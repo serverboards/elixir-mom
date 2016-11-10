@@ -20,7 +20,6 @@ defmodule MOM.RPC.Endpoint.MethodCaller do
     }
     # I will receive requests here
     Channel.subscribe(rpc_in.request, fn msg ->
-
       replyf = if msg.id do
         fn
           {:ok, reply} ->

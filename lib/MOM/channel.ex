@@ -102,7 +102,7 @@ defprotocol MOM.Channel do
 
   def subscribe(channel, function, options \\ [])
   def unsubscribe(channel, id)
-  def send(channel, message, options \\ [])
+  def send(channel, message, options \\ [], timeout \\ 5_000)
 end
 
 
@@ -113,8 +113,8 @@ defimpl MOM.Channel, for: Any do
   def unsubscribe(channel, id) do
     channel.__struct__.unsubscribe(channel, id)
   end
-  def send(channel, msg, options \\ []) do
-    channel.__struct__.send(channel, msg, options)
+  def send(channel, msg, options \\ [], timeout \\ 5_000) do
+    channel.__struct__.send(channel, msg, options, timeout)
   end
 end
 
