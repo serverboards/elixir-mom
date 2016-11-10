@@ -59,7 +59,7 @@ defimpl MOM.Channel, for: Atom do
     Channel.unsubscribe(channel, subscriber)
   end
   @doc "Sends message to a named channel"
-  def send(channel, %MOM.Message{} = message, options, timeout) do
+  def send(channel, %MOM.Message{} = message, options \\ [], timeout \\ 60_000) do
     channel = Channel.Named.ensure_exists(channel)
     Channel.send(channel, message, options, timeout)
   end
