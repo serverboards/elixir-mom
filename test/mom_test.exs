@@ -6,7 +6,7 @@ defmodule MOMTest do
 
 
   doctest MOM
-  doctest MOM.Channel
+  #doctest MOM.Channel
   doctest MOM.Channel.Broadcast
   doctest MOM.Channel.Named
   doctest MOM.Channel.PointToPoint

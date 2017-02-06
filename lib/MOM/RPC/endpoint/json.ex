@@ -57,7 +57,7 @@ defmodule MOM.RPC.Endpoint.JSON do
       '' ->
         :empty
       line ->
-        case JSON.decode( line ) do
+        case Poison.decode( line ) do
           # these two are from the JSON side to the other side
           {:ok, %{ "method" => method, "params" => params, "id" => id}} ->
             call_out(client, method, params, id)
@@ -182,7 +182,7 @@ defmodule MOM.RPC.Endpoint.JSON do
   end
 
   defp write_map(%{writef: writef}, map) do
-    {:ok, line} = JSON.encode( map )
+    {:ok, line} = Poison.encode( map )
     writef.(line<>"\n")
     :ok
   end

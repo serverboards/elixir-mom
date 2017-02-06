@@ -13,7 +13,7 @@ defmodule MOM.RPC.MethodCaller do
 
 ```
   iex> alias MOM.RPC.MethodCaller
-  iex> {:ok, mc} = MethodCaller.start_link
+  iex> {:ok, mc} = MethodCaller.start_link()
   iex> MethodCaller.add_method mc, "ping", fn _ -> "pong" end, async: false
   iex> MethodCaller.call mc, "ping", [], nil
   {:ok, "pong"}
@@ -233,7 +233,7 @@ defmodule MOM.RPC.MethodCaller do
 
 ```
   iex> require Logger
-  iex> {:ok, mc} = start_link
+  iex> {:ok, mc} = start_link()
   iex> add_method mc, "echo", &(&1), require_perm: "echo"
   iex> add_method_caller mc, fn
   ...>   %{ method: "dir" } -> {:ok, ["echo_fn"]}
