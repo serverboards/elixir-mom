@@ -3,7 +3,7 @@ defmodule MOM.Mixfile do
 
   def project do
     [app: :mom,
-     version: "0.4.0",
+     version: "0.4.1",
      elixir: "~> 1.2",
      name: "Elixir MOM",
      build_embedded: Mix.env == :prod,
@@ -41,7 +41,7 @@ defmodule MOM.Mixfile do
       maintainers: ["David Moreno"],
       licenses: ["Apache-2.0"],
       links: %{
-        "GitHub" => "https://github/serverboards/elixir-mom",
+        "GitHub" => "https://github.com/serverboards/elixir-mom",
         "Serverboards" => "https://serverboards.io"
       }
     ]
