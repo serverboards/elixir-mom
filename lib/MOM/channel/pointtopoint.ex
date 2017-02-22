@@ -137,4 +137,12 @@ defmodule MOM.Channel.PointToPoint do
       handle_call({:send, msg, []}, from, state)
     end
   end
+
+  # ignore these messages, they come from creating a task for every call at MOM/method_caller.ex:309
+  def handle_info({_ref, :ok}, state), do: {:noreply, state}
+  def handle_info({:DOWN, _ref, :process, _pid, :normal}, state), do: {:noreply, state}
+  def handle_info(any, state) do
+    Logger.warn("Received unexpected message: #{inspect any}")
+    {:noreply, state}
+  end
 end

@@ -2,7 +2,7 @@ require Logger
 
 defmodule Serverboards.MethodCallerTest do
   use ExUnit.Case
-  #@moduletag :capture_log
+  @moduletag :capture_log
   doctest MOM.RPC.MethodCaller, import: true
 
 	alias MOM.RPC
