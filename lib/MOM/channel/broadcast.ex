@@ -36,6 +36,27 @@ defmodule MOM.Channel.Broadcast do
 
 ```
 
+  Channels can self-unsubscribe returning :unsubscribe from the
+  called function.
+
+  ```
+  iex> alias MOM.{Channel, Message}
+  iex> {:ok, a} = Channel.Broadcast.start_link
+  iex> {:ok, data} = Agent.start_link(fn -> 0 end)
+  iex> Channel.subscribe(a, fn _ ->
+  ...>   Logger.info("Called")
+  ...>   Agent.update(data, &(&1 + 1))
+  ...>  :unsubscribe
+  ...> end)
+  iex> Channel.send(a, %Message{})
+  :ok
+  iex> Channel.send(a, %Message{})
+  :ok
+  iex> :timer.sleep(100) #send is async, wait for it
+  iex> Agent.get(data, &(&1))
+  1
+
+```
   """
   def send(channel, %Message{} = message, options, timeout) do
     if Keyword.get(options, :sync, false) do
@@ -54,8 +75,12 @@ defmodule MOM.Channel.Broadcast do
     else
       subscribers = for {options,f} <- state.subscribers do
         try do
-          f.(msg)
-          {options, f}
+          case f.(msg) do
+            :unsubscribe ->
+              nil
+            other ->
+              {options, f}
+          end
         catch
           :exit, _ ->
             Logger.warn("Sending #{inspect msg} to exitted process. Removing it.")

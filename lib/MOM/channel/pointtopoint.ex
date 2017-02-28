@@ -48,6 +48,29 @@ defmodule MOM.Channel.PointToPoint do
   :nok
 
 ```
+
+  Channels can self-unsubscribe returning :unsubscribe from the
+  called function.
+
+  ```
+  iex> alias MOM.{Channel, Message}
+  iex> {:ok, a} = Channel.PointToPoint.start_link
+  iex> {:ok, data} = Agent.start_link(fn -> 0 end)
+  iex> Channel.subscribe(a, fn _ ->
+  ...>   Logger.info("Called")
+  ...>   Agent.update(data, &(&1 + 1))
+  ...>  :unsubscribe
+  ...> end)
+  iex> Channel.send(a, %Message{})
+  :unsubscribe
+  iex> Channel.send(a, %Message{})
+  :empty
+  iex> :timer.sleep(100) #send is async, wait for it
+  iex> Agent.get(data, &(&1))
+  1
+
+```
+
   """
 
   alias MOM.{Message, Channel}
@@ -91,6 +114,8 @@ defmodule MOM.Channel.PointToPoint do
     case ok do
       :ok ->
         {:ok, []}
+      :unsubscribe ->
+        {ok, [{id, f}]}
       :exit -> # remove me, and any that later was said to be for removal
         {ok, toremove} = dispatch(rest, msg)
         {ok, [{id, f}] ++ toremove}
