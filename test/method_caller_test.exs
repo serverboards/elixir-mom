@@ -193,4 +193,50 @@ defmodule Serverboards.MethodCallerTest do
 
     assert (RPC.Endpoint.Caller.call caller, "test", []) == {:ok, :ok}
   end
+
+  # from http://stackoverflow.com/questions/29668635/how-can-we-easily-time-function-calls-in-elixir
+  def measure(function) do
+    function
+    |> :timer.tc
+    |> elem(0)
+    |> Kernel./(1_000_000)
+  end
+
+
+  test "Calls are not serialized" do
+    {:ok, rpc} = RPC.start_link
+    {:ok, rpc_mc} = RPC.Endpoint.MethodCaller.start_link(rpc)
+    {:ok, caller} = RPC.Endpoint.Caller.start_link(rpc)
+    {:ok, mc} = RPC.MethodCaller.start_link
+    RPC.Endpoint.MethodCaller.add_method_caller rpc_mc, mc
+
+      RPC.MethodCaller.add_method mc, "foo", fn _ ->
+        Logger.debug("Wait 2s #{inspect self()}")
+        :timer.sleep(2_000)
+        {:ok, :ok}
+      end
+
+    # one call, sync, for control
+    t = measure(fn ->
+      assert (RPC.Endpoint.Caller.call caller, "foo", []) == {:ok, :ok}
+    end)
+    assert t > 2
+    assert t < 3
+
+    # 100 real test
+    t = measure(fn ->
+      for i <- 1..10 do
+        Task.async(fn ->
+          RPC.Endpoint.Caller.call(caller, "foo", [])
+        end)
+      end |> Enum.map(fn t ->
+        Task.await(t)
+      end)
+    end)
+    assert t > 2
+    assert t < 3
+
+
+  end
+
 end
