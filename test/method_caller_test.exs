@@ -2,7 +2,7 @@ require Logger
 
 defmodule Serverboards.MethodCallerTest do
   use ExUnit.Case
-  @moduletag :capture_log
+  #@moduletag :capture_log
   doctest MOM.RPC.MethodCaller, import: true
 
 	alias MOM.RPC
@@ -223,7 +223,9 @@ defmodule Serverboards.MethodCallerTest do
     assert t > 2
     assert t < 3
 
-    # 100 real test
+    Logger.debug("Do 10")
+
+    # 10 real test
     t = measure(fn ->
       for i <- 1..10 do
         Task.async(fn ->
@@ -236,7 +238,7 @@ defmodule Serverboards.MethodCallerTest do
     assert t > 2
     assert t < 3
 
-
+    Logger.debug("Done")
   end
 
 end

@@ -35,14 +35,10 @@ defmodule MOM.RPC.Endpoint.MethodCaller do
         fn _ -> :ok end
       end
 
-      Task.start( fn ->
-        ret = RPC.MethodCaller.cast(
-            client.method_caller,
-            msg.payload.method, msg.payload.params, client.context,
-            replyf)
-        ret
-      end)
-      :ok
+      RPC.MethodCaller.cast(
+        client.method_caller,
+        msg.payload.method, msg.payload.params, client.context,
+        replyf)
     end)
 
     {:ok, client}

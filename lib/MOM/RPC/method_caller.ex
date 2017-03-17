@@ -21,64 +21,39 @@ defmodule MOM.RPC.MethodCaller do
   {:ok, ["dir", "ping"]}
 
 ```
-
   """
+  use GenServer
 
   alias MOM.RPC
 
   def start_link(options \\ []) do
-    {:ok, pid} = Agent.start_link fn -> %{ methods: %{}, mc: [], guards: [] } end, options
-
-    add_method pid, "dir", fn _, context ->
-      __dir(pid, context)
-    end, [async: false, context: true]
+    {:ok, pid} = GenServer.start_link(__MODULE__, [], options)
 
     {:ok, pid}
   end
 
   def stop(pid, reason \\ :normal) do
-    Agent.stop pid, reason
+    GenServer.stop(pid, reason)
   end
 
+  @doc ~S"""
+  Shows debug info about this method caller
+  """
+  def debug(pid) do
+    GenServer.call(pid, {:debug})
+  end
   def debug(false) do
     false
   end
 
-  def debug(pid) do
-    st = Agent.get pid, &(&1)
-    %{
-      methods: (Map.keys st.methods),
-      mc: Enum.map(st.mc, fn
-        {mc, options} when is_function(mc) ->
-          name = Keyword.get options, :name, (inspect mc)
-          "fn #{name}"
-        {pid, _options} when is_pid(pid) -> debug(pid)
-        _ -> "??"
-      end)
-    }
-  end
-
+  @doc ~S"""
+  Return list of funtions known by this method caller
+  """
   def __dir(pid, context) when is_pid(pid) do
-    st = Agent.get pid, &(&1)
-    local = st.methods
-      |> Enum.flat_map(fn {name, {_, options}} ->
-          if check_guards(%MOM.RPC.Message{ method: name, context: context}, options, st.guards) do
-            [name]
-          else
-            []
-          end
-        end)
-    other = Enum.flat_map( st.mc, fn {smc, options} ->
-      if check_guards(%MOM.RPC.Message{ method: "dir", context: context}, options, st.guards) do
-        __dir(smc, context)
-      else
-        []
-      end
-    end)
-    Enum.uniq Enum.sort( local ++ other )
+    GenServer.call(pid, {:dir, context})
   end
-
   def __dir(f, context) when is_function(f) do
+    # this version accepts a function that is a method caller
     try do
       case f.(%RPC.Message{method: "dir", context: context}) do
         {:ok, l} when is_list(l) -> l
@@ -92,6 +67,7 @@ defmodule MOM.RPC.MethodCaller do
         []
     end
   end
+
 
   @doc ~S"""
   Adds a method to be called later.
@@ -125,11 +101,9 @@ defmodule MOM.RPC.MethodCaller do
 ```
   """
   def add_method(pid, name, f, options \\ []) do
-    Agent.update pid, fn st ->
-      %{ st | methods: Map.put(st.methods, name, {f, options})}
-    end
-    :ok
+    GenServer.call(pid, {:add_method, name, f, options})
   end
+
 
   @doc ~S"""
   Method callers can be chained, so that if current does not resolve, try on another
@@ -198,11 +172,7 @@ defmodule MOM.RPC.MethodCaller do
     raise RuntimeError, "Cant add a method caller to itself."
   end
   def add_method_caller(pid, nmc, options) when is_pid(pid) do
-    #Logger.debug("Add caller #{inspect nmc} to #{inspect pid}")
-    Agent.update pid, fn st ->
-      %{ st | mc: st.mc ++ [{nmc, options}] }
-    end
-    :ok
+    GenServer.call(pid, {:add_method_caller, nmc, options})
   end
   def add_method_caller(pid, nmc), do: add_method_caller(pid, nmc, [])
 
@@ -269,30 +239,7 @@ defmodule MOM.RPC.MethodCaller do
   In this example a map is used as context. Normally it would be a RPC.Context.
   """
   def add_guard(pid, name, guard_f) when is_pid(pid) and is_function(guard_f) do
-    Agent.update pid, fn st ->
-      %{ st | guards: st.guards ++ [{name, guard_f}] }
-    end
-  end
-
-  # Checks all the guards, return false if any fails.
-  defp check_guards(%MOM.RPC.Message{}, _, []), do: true
-  defp check_guards(%MOM.RPC.Message{} = msg, options, [{gname, gf} | rest]) do
-    try do
-      if gf.(msg, options) do
-        #Logger.debug("Guard #{inspect msg} #{inspect gname} allowed pass")
-        check_guards(msg, options, rest)
-      else
-        #Logger.debug("Guard #{inspect msg} #{inspect gname} STOPPED pass")
-        false
-      end
-    rescue
-      FunctionClauseError ->
-        #Logger.debug("Guard #{inspect msg} #{inspect gname} STOPPED pass (Function Clause Error)")
-        false
-      e ->
-        Logger.error("Error checking method caller guard #{gname}: #{inspect e}\n#{Exception.format_stacktrace}")
-        false
-    end
+    GenServer.call(pid, {:add_guard, name, guard_f})
   end
 
   @doc ~S"""
@@ -307,7 +254,6 @@ defmodule MOM.RPC.MethodCaller do
 
   """
   def call(pid, method, params, context) do
-    #__call(pid, %RPC.Message{ method: method, params: params, context: context})
     async = Task.async(fn ->
       async = self()
       cast(pid, method, params, context, fn res ->
@@ -365,6 +311,7 @@ defmodule MOM.RPC.MethodCaller do
 ```
   """
   def cast(f, method, params, context, cb) when is_function(f)  do
+    # function version, no use of gen server
     ret = try do
       f.(%RPC.Message{ method: method, params: params, context: context})
     rescue
@@ -387,18 +334,95 @@ defmodule MOM.RPC.MethodCaller do
 
     cb.(cb_params)
   end
-
   def cast(pid, method, params, context, cb) when is_pid(pid) do
-    st = Agent.get pid, &(&1)
-    #Logger.debug("Method #{method} caller pid #{inspect pid}, in #{inspect (Map.keys st.methods)} #{inspect Enum.map(st.mc, fn {f, options} -> Keyword.get options, :name, (inspect f) end) }")
-    case Map.get st.methods, method do
+    GenServer.call(pid, {:cast, method, params, context, cb }, 600_000)
+  end
+  # server impl
+
+  def init([]) do
+    pid=self()
+    state = %{
+      methods: %{
+        "dir" => {
+            fn _, context ->
+              __dir(pid, context)
+            end,
+            [async: false, context: true]
+          }
+        },
+      mc: [],
+      guards: []
+    }
+
+    {:ok, state}
+  end
+
+
+  def handle_call({:debug}, _from, st) do
+    %{
+      methods: (Map.keys st.methods),
+      mc: Enum.map(st.mc, fn
+        {mc, options} when is_function(mc) ->
+          name = Keyword.get options, :name, (inspect mc)
+          "fn #{name}"
+        {pid, _options} when is_pid(pid) ->
+          debug(pid)
+        _ ->
+          "??"
+      end)
+    }
+  end
+
+  def handle_call({:dir, context}, _from, st) do
+    local = st.methods
+      |> Enum.flat_map(fn {name, {_, options}} ->
+          if check_guards(%MOM.RPC.Message{ method: name, context: context}, options, st.guards) do
+            [name]
+          else
+            []
+          end
+        end)
+    other = Enum.flat_map( st.mc, fn {smc, options} ->
+      if check_guards(%MOM.RPC.Message{ method: "dir", context: context}, options, st.guards) do
+        __dir(smc, context)
+      else
+        []
+      end
+    end)
+    res = Enum.uniq Enum.sort( local ++ other )
+    {:reply, res, st}
+  end
+
+  def handle_call({:add_method, name, f, options}, _from, status) do
+    {:reply, :ok, %{ status |
+      methods: Map.put(status.methods, name, {f, options})
+    }}
+  end
+  def handle_call({:add_method_caller, nmc, options}, _from, status) do
+    {:reply, :ok, %{ status |
+      mc: status.mc ++ [{nmc, options}]
+    }}
+  end
+  def handle_call({:add_guard, name, guard_f}, _from, status) do
+    {:reply, :ok, %{ status |
+      guards: status.guards ++ [{name, guard_f}]
+    }}
+  end
+  def handle_call({:cast, "dir", params, context, cb}, from, status) do
+    {:reply, res, status} = handle_call({:dir, context}, from, status)
+    cb.({:ok, res })
+    {:reply, :ok, status}
+  end
+  def handle_call({:cast, method, params, context, cb}, from, status) do
+    #Logger.debug("Method #{method} caller pid #{inspect pid}, in #{inspect (Map.keys status.methods)} #{inspect Enum.map(status.mc, fn {f, options} -> Keyword.get options, :name, (inspect f) end) }")
+    case Map.get status.methods, method do
       {f, options} ->
         # Calls the function and the callback with the result, used in async and sync.
         call_f = fn ->
-          if check_guards(%RPC.Message{ method: method, params: params, context: context}, options, st.guards) do
+          if check_guards(%RPC.Message{ method: method, params: params, context: context}, options, status.guards) do
             try do
               v = if Keyword.get(options, :context, false) do
-                #Logger.debug("Calling with context #{inspect f} #{inspect options}")
+                #Logger.debug("Calling with context #{inspect f} #{inspect options} #{inspect self()}")
                 f.(params, context)
               else
                 #Logger.debug("Calling without context #{inspect f}")
@@ -432,28 +456,48 @@ defmodule MOM.RPC.MethodCaller do
           end
         end
 
-        # sync or async
+        # sync or async, default async
         if Keyword.get(options, :async, true) do
-          Task.async fn -> call_f.() end
+          Task.start fn ->
+            call_f.()
+          end
+          # is being processed
+          {:reply, :ok, status}
         else
-          call_f.()
+          ret = call_f.()
+          {:reply, ret, status}
         end
-
-        # found.
-        :ok
       nil ->
         # Look for it at method callers
-        #Logger.debug("Call cast from #{inspect pid} to #{inspect st.mc}")
-        ret = cast_mc(st.mc, method, params, context, st.guards, cb)
-        #Logger.debug("#{inspect ret} at #{inspect pid}")
-        ret
+        #Logger.debug("Call cast from #{inspect self()} to #{inspect status.mc}")
+        Task.start(fn ->
+          ret = cast_mc(status.mc, method, params, context, status.guards, cb)
+          GenServer.reply(from, ret)
+          #Logger.debug("Call cast done #{inspect ret} at #{inspect self()}")
+        end)
+        {:noreply, status}
     end
   end
 
-  defp cast_mc([], _, _, _, _, cb) do # end of search, :unknown_method
-    #Logger.debug("No more Method Callers to call")
-    cb.({:error, :unknown_method})
-    :nok
+  # Checks all the guards, return false if any fails.
+  defp check_guards(%MOM.RPC.Message{}, _, []), do: true
+  defp check_guards(%MOM.RPC.Message{} = msg, options, [{gname, gf} | rest]) do
+    try do
+      if gf.(msg, options) do
+        #Logger.debug("Guard #{inspect msg} #{inspect gname} allowed pass")
+        check_guards(msg, options, rest)
+      else
+        #Logger.debug("Guard #{inspect msg} #{inspect gname} STOPPED pass")
+        false
+      end
+    rescue
+      FunctionClauseError ->
+        #Logger.debug("Guard #{inspect msg} #{inspect gname} STOPPED pass (Function Clause Error)")
+        false
+      e ->
+        Logger.error("Error checking method caller guard #{gname}: #{inspect e}\n#{Exception.format_stacktrace}")
+        false
+    end
   end
 
   ~S"""
@@ -472,31 +516,25 @@ defmodule MOM.RPC.MethodCaller do
   own continuation cb. And then using a process signal we give the
   result to the original cast_mc.
   """
+  defp cast_mc([], _, _, _, _, cb) do # end of search, :unknown_method
+    #Logger.debug("No more Method Callers to call")
+    cb.({:error, :unknown_method})
+    :nok
+  end
   defp cast_mc([{h, options} | t], method, params, context, guards, cb) do
     #Logger.debug("Cast mc #{Keyword.get options, :name, (inspect h)}")
     if check_guards(
-        %RPC.Message{ method: method, params: params, context: context},
-        options, guards) do
-      task = Task.async fn ->
-        task = self()
+          %RPC.Message{ method: method, params: params, context: context},
+          options, guards) do
         cast(h, method, params, context, fn
           # Keep searching for it
           {:error, :unknown_method} ->
-            #Logger.debug("Keep looking MC")
             ok = cast_mc(t, method, params, context, guards, cb)
-            # signal that it did it.
-            send task, ok
+          # done
           other ->
             #Logger.debug("Done #{inspect other}")
-            send task, :ok # done! Dont make it wait more.
             cb.(other)
         end)
-        receive do
-          a -> a
-        end
-      end
-
-      Task.await(task, 60_000)
     else
       # skip, guards not passed
       cast_mc(t, method, params, context, guards, cb)
