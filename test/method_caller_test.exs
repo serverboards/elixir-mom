@@ -227,7 +227,7 @@ defmodule Serverboards.MethodCallerTest do
 
     # 10 real test
     t = measure(fn ->
-      for i <- 1..100 do
+      for _i <- 1..100 do
         Task.async(fn ->
           RPC.Endpoint.Caller.call(caller, "foo", [])
         end)

@@ -7,7 +7,7 @@ defmodule MOM.RPC.Context do
   Example:
 
 ```
-  iex> {:ok, ma} = start_link
+  iex> {:ok, ma} = start_link()
   iex> set ma, "test", true
   :ok
   iex> get ma, "test"
@@ -87,7 +87,7 @@ defmodule MOM.RPC.Context do
   Example:
 
 ```
-  iex> {:ok, c} = start_link
+  iex> {:ok, c} = start_link()
   iex> update c, :test, a: 1
   iex> get c, :test
   %{ a: 1 }
@@ -103,7 +103,7 @@ defmodule MOM.RPC.Context do
   Also can bu strings
 
 ```
-  iex> {:ok, c} = start_link
+  iex> {:ok, c} = start_link()
   iex> update c, :test, [{"string", 1}]
   iex> get c, :test
   %{ "string" => 1 }

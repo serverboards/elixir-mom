@@ -39,11 +39,11 @@ defmodule MOM.RPC.MethodCaller do
   @doc ~S"""
   Shows debug info about this method caller
   """
-  def debug(pid) do
-    GenServer.call(pid, {:debug})
-  end
   def debug(false) do
     false
+  end
+  def debug(pid) do
+    GenServer.call(pid, {:debug})
   end
 
   @doc ~S"""
@@ -301,7 +301,7 @@ defmodule MOM.RPC.MethodCaller do
 ```
 
 ```
-  iex> alias MOM.RPC.{Context, MethodCaller}
+  iex> alias MOM.RPC.MethodCaller
   iex> MethodCaller.cast(fn _ -> {:ok, :ok} end, "any", [], nil, fn
   ...>   {:ok, _v} -> :ok
   ...>   {:error, e} -> {:error, e}
@@ -408,7 +408,7 @@ defmodule MOM.RPC.MethodCaller do
       guards: status.guards ++ [{name, guard_f}]
     }}
   end
-  def handle_call({:cast, "dir", params, context, cb}, from, status) do
+  def handle_call({:cast, "dir", _params, context, cb}, from, status) do
     {:reply, res, status} = handle_call({:dir, context}, from, status)
     cb.({:ok, res })
     {:reply, :ok, status}
@@ -529,7 +529,7 @@ defmodule MOM.RPC.MethodCaller do
         cast(h, method, params, context, fn
           # Keep searching for it
           {:error, :unknown_method} ->
-            ok = cast_mc(t, method, params, context, guards, cb)
+            cast_mc(t, method, params, context, guards, cb)
           # done
           other ->
             #Logger.debug("Done #{inspect other}")
