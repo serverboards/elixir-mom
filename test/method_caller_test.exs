@@ -2,7 +2,7 @@ require Logger
 
 defmodule Serverboards.MethodCallerTest do
   use ExUnit.Case
-  #@moduletag :capture_log
+  @moduletag :capture_log
   doctest MOM.RPC.MethodCaller, import: true
 
 	alias MOM.RPC
@@ -63,7 +63,7 @@ defmodule Serverboards.MethodCallerTest do
         "dir" ->
           {:ok, ["echo_mc"]}
         "echo_mc" ->
-          {:ok, msg.parms}
+          {:ok, msg.parms} # error on pourpose
         _ -> :nok
       end
     end
@@ -223,11 +223,11 @@ defmodule Serverboards.MethodCallerTest do
     assert t > 2
     assert t < 3
 
-    Logger.debug("Do 10")
+    Logger.debug("Do 100")
 
     # 10 real test
     t = measure(fn ->
-      for i <- 1..10 do
+      for i <- 1..100 do
         Task.async(fn ->
           RPC.Endpoint.Caller.call(caller, "foo", [])
         end)
