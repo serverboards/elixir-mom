@@ -45,26 +45,30 @@ defmodule Serverboards.RPC.ClientTest do
   test "Call to client" do
     {:ok, client} = Client.start_link writef: :context
 
-    MOM.RPC.Client.cast client, "dir", [], fn {:ok, []} ->
+    Task.start(fn ->
+      # waits to get answer, to set the called
+      res = MOM.RPC.Client.call client, "dir", []
+      assert res == {:ok, []}
       Client.set client, :called, true
-    end
-    :timer.sleep(20)
+    end)
+    :timer.sleep(20) #20 ms
 
     # manual reply
     assert (Client.get client, :called, false) == false
+    Logger.debug("Last line #{inspect(Client.get client, :last_line)}")
     {:ok, js} = Poison.decode(Client.get client, :last_line)
     assert Map.get(js,"method") == "dir"
     {:ok, res} = Poison.encode(%{ id: 1, result: []})
     Logger.debug("Writing result #{res}")
     assert (Client.parse_line client, res) == :ok
 
-    :timer.sleep(20)
+    :timer.sleep(20) # 20ms
 
     assert (Client.get client, :called) == true
 
 
     Client.event client, "auth", ["basic"]
-    :timer.sleep(20)
+    :timer.sleep(1)
     {:ok, js} = Poison.decode(Client.get client, :last_line)
     assert Map.get(js,"method") == "auth"
     assert Map.get(js,"params") == ["basic"]

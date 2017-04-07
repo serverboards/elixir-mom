@@ -269,74 +269,6 @@ defmodule MOM.RPC.MethodCaller do
     end
   end
 
-  @doc ~S"""
-  Calls the method and calls the callback continuation with the result.
-
-  If the method was async, it will be run in another task, if it was sync,
-  its run right now.
-
-  If the method does not exists, returns :nok, if it does, returns :ok.
-
-  Callback is a function that can receive {:ok, value} or {:error, %Exception{...}}
-
-  Alternatively mc can be a function that receies a %RPC.Message and returns any of:
-
-  * {:ok, ret}
-  * {:error, error}
-  * :nok
-  * :empty
-
-  Possible errors:
-   * :unknown_method
-   * :bad_arity
-
-  ## Examples
-
-```
-  iex> alias MOM.RPC.{Context, MethodCaller}
-  iex> {:ok, mc} = MethodCaller.start_link
-  iex> MethodCaller.add_method mc, "echo", fn [what], context -> "#{what}#{Context.get(context, :test, :fail)}" end, context: true
-  iex> {:ok, context} = Context.start_link
-  iex> Context.set context, :test, "ok"
-  iex> MethodCaller.call mc, "echo", ["test_"], context
-  {:ok, "test_ok"}
-
-```
-
-```
-  iex> alias MOM.RPC.MethodCaller
-  iex> MethodCaller.cast(fn _ -> {:ok, :ok} end, "any", [], nil, fn
-  ...>   {:ok, _v} -> :ok
-  ...>   {:error, e} -> {:error, e}
-  ...> end)
-  :ok
-
-```
-  """
-  def cast(f, method, params, context, cb) when is_function(f)  do
-    ret = call(f, method, params, context)
-    cb_params = case ret do
-      {:ok, ret} -> {:ok, ret}
-      {:error, :unknown_method} -> {:error, :unknown_method}
-      {:error, other} -> {:error, other}
-      :nok -> {:error, :unknown_method}
-      :empty -> {:error, :unknown_method}
-    end
-
-    cb.(cb_params)
-  end
-  def cast(pid, method, params, context, cb) when is_pid(pid) do
-    #Logger.info("Call #{inspect pid}/#{method}")
-    #Logger.debug("cast call")
-    #res = GenServer.call(pid, {:cast, method, params, context, cb }, 600_000)
-    #Logger.info("Call cast result #{inspect pid}/#{method} -> #{inspect res}")
-    #res
-    Task.start(fn ->
-      res = call(pid, method, params, context)
-      cb.(res)
-    end)
-    :ok
-  end
   # server impl
 
   def init([name: name]) do
@@ -410,11 +342,6 @@ defmodule MOM.RPC.MethodCaller do
       guards: status.guards ++ [{name, guard_f}]
     }}
   end
-  def handle_call({:cast, "dir", _params, context, cb}, from, status) do
-    {:reply, res, status} = handle_call({:dir, context}, from, status)
-    cb.({:ok, res })
-    {:reply, :ok, status}
-  end
   def handle_call({:call, "dir", _params, context}, from, status) do
     {:reply, dir, status} = handle_call({:dir, context}, from, status)
     {:reply, {:ok, dir}, status}
@@ -450,45 +377,6 @@ defmodule MOM.RPC.MethodCaller do
           {:noreply, status}
         else # no mcs, then nok
           {:reply, {:error, :unknown_method}, status}
-        end
-    end
-  end
-
-  def handle_call({:cast, method, params, context, cb}, from, status) do
-    Logger.info("Method #{method} caller pid #{status.name}, in #{inspect (Map.keys status.methods)} #{inspect Enum.map(status.mc, fn {f, options} -> Keyword.get options, :name, (inspect f) end) }")
-    case Map.get status.methods, method do
-      {f, options} ->
-        # sync or async, default async
-        if Keyword.get(options, :async, true) do
-          Task.start fn ->
-            res = call_function_real(f, options, method, params, context, status)
-            cb.(res)
-          end
-          # is being processed
-          {:reply, :ok, status}
-        else
-          res = call_function_real(f, options, method, params, context, status)
-          cb.(res)
-          {:reply, :ok, status}
-        end
-      nil ->
-        # Look for it at method callers. Use a task to prevent blocking.
-        if Enum.count(status.mc) > 0 do
-          #Logger.debug("Checking MCs #{inspect status.mc}/#{inspect method}")
-          Task.start(fn ->
-            res = call_method_callers(status.mc, method, params, context, status)
-            reply = case res do
-              {:error, :unknown_method} -> :nok
-              other ->
-                cb.(res)
-                :ok
-            end
-            GenServer.reply(from, reply)
-            #Logger.debug("Call cast done #{inspect ret} at #{inspect self()}")
-          end)
-          {:noreply, status}
-        else # no mcs, then nok
-          {:reply, :nok, status}
         end
     end
   end

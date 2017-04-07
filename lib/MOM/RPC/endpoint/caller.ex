@@ -7,7 +7,11 @@ defmodule MOM.RPC.Endpoint.Caller do
     {:ok, pid } = GenServer.start_link __MODULE__, rpc_out, options
 
     MOM.Channel.subscribe( rpc_out.reply, fn msg ->
-      GenServer.cast(pid, {:reply, msg})
+      if msg.error do
+        error(pid, msg.id, msg.error)
+      else
+        reply(pid, msg.id, msg.payload)
+      end
     end)
 
     {:ok, %{ pid: pid, rpc_out: rpc_out }}
@@ -17,19 +21,22 @@ defmodule MOM.RPC.Endpoint.Caller do
     GenServer.stop(caller.pid, reason)
   end
 
-
   def call(client, method, params, timeout \\ 60_000) do
+    Logger.debug("Call!")
     GenServer.call(client.pid, {:call, method, params}, timeout)
-  end
-
-  def cast(client, method, params, cb) do
-    GenServer.cast(client.pid, {:cast, method, params, cb})
   end
 
   def event(client, method, params) do
     MOM.Channel.send(client.rpc_out.request, %MOM.Message{ payload:
       %MOM.RPC.Message{ method: method, params: params}
       })
+  end
+
+  def reply(client, id, res) do
+    GenServer.cast(client, {:reply, id, res})
+  end
+  def error(client, id, error) do
+    GenServer.cast(client, {:error, id, error})
   end
 
   # server impl
@@ -43,60 +50,42 @@ defmodule MOM.RPC.Endpoint.Caller do
 
   def handle_call({:call, method, params}, from, status) do
     id = status.maxid
-    ok = MOM.Channel.send(status.rpc_out.request, %MOM.Message{ payload:
-      %MOM.RPC.Message{ method: method, params: params}, id: id
-      } )
-    case ok do
-      :empty ->
-        {:reply, {:error, :unknown_method}, status}
-      :nok ->
-        {:reply, {:error, :unknown_method}, status}
-      :ok ->
-        {:noreply, %{
-          status |
-          reply: Map.put(status.reply, id, from),
-          maxid: status.maxid+1
-          }
-        }
-    end
-  end
-
-  def handle_cast({:reply, msg}, status) do
-    result = if msg.error do
-      {:error, msg.error}
-    else
-      {:ok, msg.payload}
-    end
-    case status.reply[msg.id] do
-      f when is_function(f) -> # used at cast
-        f.( result )
-      {pid, _} = from when is_pid(pid) -> # used at call
-        GenServer.reply( from, result )
-    end
-
-    {:noreply, %{ status |
-      reply: Map.drop(status.reply, [msg.id])
+    pid = self()
+    Task.start(fn ->
+      ok = MOM.Channel.send(status.rpc_out.request, %MOM.Message{ payload:
+        %MOM.RPC.Message{ method: method, params: params}, id: id
+        } )
+      case ok do
+        :empty ->
+          error(pid, id, :unknown_method)
+        :nok ->
+          error(pid, id, :unknown_method)
+        :ok ->
+          :ok # do nothing, wait for real reply
+      end
+    end)
+    {:noreply, %{
+      status |
+      reply: Map.put(status.reply, id, from),
+      maxid: status.maxid+1
       }
     }
   end
 
-  def handle_cast({:cast, method, params, cb}, status) when is_function(cb) do
-    id = status.maxid
-    ok = MOM.Channel.send(status.rpc_out.request, %MOM.Message{ payload:
-      %MOM.RPC.Message{ method: method, params: params}, id: id
-      } )
-    #Logger.debug("Return from cast: #{inspect ok}")
-    case ok do
-      :nok -> # Could not send it
-        cb.({:error, :unknown_method})
-        {:noreply, status}
-      :ok ->
-        {:noreply, %{ status |
-          reply: Map.put(status.reply, id, cb),
-          maxid: status.maxid+1
-        }
-      }
-    end
+  def handle_cast({:reply, id, res}, status) do
+    GenServer.reply( status.reply[id], {:ok, res} )
 
+    {:noreply, %{ status |
+      reply: Map.drop(status.reply, [id])
+      }
+    }
+  end
+  def handle_cast({:error, id, res}, status) do
+    GenServer.reply( status.reply[id], {:error, res} )
+
+    {:noreply, %{ status |
+      reply: Map.drop(status.reply, [id])
+      }
+    }
   end
 end

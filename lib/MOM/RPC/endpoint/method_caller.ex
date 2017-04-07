@@ -20,8 +20,12 @@ defmodule MOM.RPC.Endpoint.MethodCaller do
     }
     # I will receive requests here
     Channel.subscribe(rpc_in.request, fn msg ->
-      replyf = if msg.id do
-        fn
+      res = RPC.MethodCaller.call(
+        client.method_caller,
+        msg.payload.method, msg.payload.params, client.context)
+
+      if msg.id do
+        case res do
           {:ok, reply} ->
             MOM.Channel.send( rpc_in.reply,
               %MOM.Message{ id: msg.id, payload: reply} )
@@ -32,13 +36,8 @@ defmodule MOM.RPC.Endpoint.MethodCaller do
               %MOM.Message{ id: msg.id, error: error} )
         end
       else
-        fn _ -> :ok end
+        :ok
       end
-
-      RPC.MethodCaller.cast(
-        client.method_caller,
-        msg.payload.method, msg.payload.params, client.context,
-        replyf)
     end)
 
     {:ok, client}

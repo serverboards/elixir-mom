@@ -94,7 +94,6 @@ defmodule MOM.Channel.PointToPoint do
   """
   def dispatch([], _msg), do: {:nok, []}
   def dispatch([ {id, f} | rest ], msg) do
-    Logger.debug("Call to #{id}")
     ok = try do
       f.(msg)
     catch
@@ -108,8 +107,6 @@ defmodule MOM.Channel.PointToPoint do
         Logger.error("Error sending #{inspect msg} to #{inspect f}. Sent to :invalid messages channel.\n#{inspect e}\n#{ Exception.format_stacktrace System.stacktrace }")
         :nok
     end
-
-    Logger.debug("Call to #{id}: #{inspect ok}")
 
     case ok do
       :ok ->
@@ -132,27 +129,28 @@ defmodule MOM.Channel.PointToPoint do
 
   If no subscribers returns :empty
   """
-  def handle_call({:send, msg, []}, _, state) do
-    {ok, state} = if Enum.count(state.subscribers) == 0 do
-      {:empty, state}
+  def handle_call({:send, msg, []}, from, state) do
+    ret = if Enum.count(state.subscribers) == 0 do
+      {:reply, :empty, state}
     else
-      #Logger.debug("Dispatch to #{inspect state.subscribers}")
-      {ok, toremove} = dispatch(state.subscribers, msg)
-      subscribers = if toremove != [] do
-        Enum.filter(state.subscribers, &(not &1 in toremove))
-      else
-        state.subscribers
-      end
+      pid = self()
+      Task.start(fn ->
+        {ok, toremove} = dispatch(state.subscribers, msg)
 
-      if ok == :nok do
-        Channel.send(:deadletter, %{ msg | error: :deadletter })
-      end
+        if toremove != [] do
+          GenServer.cast(pid, {:remove, toremove})
+        end
 
-      {ok, %{ state | subscribers: subscribers}}
+        if ok == :nok do
+          Channel.send(:deadletter, %{ msg | error: :deadletter })
+        end
+
+        GenServer.reply(from, ok)
+      end)
+      {:noreply, state}
     end
-    #Logger.debug("End p2p #{inspect ok}")
 
-    {:reply, ok, state}
+    ret
   end
 
   def handle_call({:send, msg, options}, from, state) do
@@ -161,6 +159,11 @@ defmodule MOM.Channel.PointToPoint do
     else
       handle_call({:send, msg, []}, from, state)
     end
+  end
+
+  def handle_cast({:remove, toremove}, state) do
+    subscribers = Enum.filter(state.subscribers, &(not &1 in toremove))
+    {:noreply, %{ state | subscribers: subscribers }}
   end
 
   # ignore these messages, they come from creating a task for every call at MOM/method_caller.ex:309

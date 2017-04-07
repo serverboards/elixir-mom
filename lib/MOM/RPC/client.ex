@@ -115,9 +115,6 @@ defmodule MOM.RPC.Client do
   def call(client, method, param) do
     Endpoint.Caller.call(client.caller, method, param)
   end
-  def cast(client, method, param, cb) do
-    Endpoint.Caller.cast(client.caller, method, param, cb)
-  end
 
   # For method caller
   def add_method(client, name, f, options \\ []) do

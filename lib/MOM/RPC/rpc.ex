@@ -33,20 +33,6 @@ defmodule MOM.RPC do
   {:ok, "Hello world!"}
 
 ```
-
-  Or non blocking
-
-```
-  iex> alias MOM.{Message, Channel, RPC}
-  iex> require Logger
-  iex> {:ok, rpc} = RPC.start_link
-  iex> {:ok, caller} = RPC.Endpoint.Caller.start_link(rpc)
-  iex> Channel.subscribe(rpc.request, fn msg -> Channel.send(msg.reply_to, %Message{ payload: msg.payload.params, id: msg.id }) end) # dirty echo rpc.
-  iex> RPC.Endpoint.Caller.cast(caller, "echo", "Hello world!", fn answer -> Logger.info("Got the answer: #{answer}") end)
-  :ok
-
-```
-
   Returns `{:error, :unkown_method}` when method does not exist
 
 ```
