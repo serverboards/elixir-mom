@@ -112,7 +112,7 @@ defmodule MOM.RPC.Endpoint.JSON do
           :timeout
       end
 
-      Logger.debug("Send result #{inspect send_result}")
+      #Logger.debug("Send result #{inspect send_result}")
       case send_result do
           :ok ->
             :ok
