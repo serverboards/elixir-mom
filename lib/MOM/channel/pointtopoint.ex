@@ -94,7 +94,7 @@ defmodule MOM.Channel.PointToPoint do
   """
   def dispatch([], _msg), do: {:nok, []}
   def dispatch([ {id, f} | rest ], msg) do
-    #Logger.debug("Call to #{id}")
+    Logger.debug("Call to #{id}")
     ok = try do
       f.(msg)
     catch
@@ -109,7 +109,7 @@ defmodule MOM.Channel.PointToPoint do
         :nok
     end
 
-    #Logger.debug("Call to #{id}: #{inspect ok}")
+    Logger.debug("Call to #{id}: #{inspect ok}")
 
     case ok do
       :ok ->

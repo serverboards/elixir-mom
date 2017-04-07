@@ -89,14 +89,14 @@ defmodule Serverboards.MethodCallerTest do
   test "Complex method handlers, many calls" do
     import MOM.RPC.MethodCaller
     {:ok, context} = RPC.Context.start_link
-    {:ok, mc} = RPC.MethodCaller.start_link
-    {:ok, mc1} = RPC.MethodCaller.start_link
-    {:ok, mc11} = RPC.MethodCaller.start_link
-    {:ok, mc12} = RPC.MethodCaller.start_link
-    {:ok, mc2} = RPC.MethodCaller.start_link
-    {:ok, mc21} = RPC.MethodCaller.start_link
-    {:ok, mc22} = RPC.MethodCaller.start_link
-    {:ok, mc211} = RPC.MethodCaller.start_link
+    {:ok, mc} = RPC.MethodCaller.start_link name: :"mc"
+    {:ok, mc1} = RPC.MethodCaller.start_link name: :"mc1"
+    {:ok, mc11} = RPC.MethodCaller.start_link name: :"mc11"
+    {:ok, mc12} = RPC.MethodCaller.start_link name: :"mc12"
+    {:ok, mc2} = RPC.MethodCaller.start_link name: :"mc2"
+    {:ok, mc21} = RPC.MethodCaller.start_link name: :"mc21"
+    {:ok, mc22} = RPC.MethodCaller.start_link name: :"mc22"
+    {:ok, mc211} = RPC.MethodCaller.start_link name: :"mc211"
 
     add_method_caller mc, mc1
     add_method_caller mc1, mc11
@@ -117,48 +117,59 @@ defmodule Serverboards.MethodCallerTest do
     add_method mc211, "mc211", &(&1)
 
     create_fn_method_caller = fn name ->
-      fn msg ->
-        #Logger.debug("At #{name}, msg #{inspect msg}")
-        case msg do
-          %{method: ^name} -> {:ok, name}
-          _ -> :nok
-        end
+      fn
+        %{method: ^name, params: [msg]} -> {:ok, "#{name}_#{msg}"}
+        %{method: n} ->
+          Logger.debug("NOK #{inspect name} != #{inspect n}")
+           :nok
       end
     end
 
-    add_method_caller mc, create_fn_method_caller.("mc_")
-    add_method_caller mc, create_fn_method_caller.("mc_1")
-    add_method_caller mc1, create_fn_method_caller.("mc1_")
-    add_method_caller mc2, create_fn_method_caller.("mc2_")
-    add_method_caller mc21, create_fn_method_caller.("mc21_")
-    add_method_caller mc21, create_fn_method_caller.("mc21_1")
-    add_method_caller mc211, create_fn_method_caller.("mc211_")
-    add_method_caller mc, create_fn_method_caller.("mc_2")
+    # Basic test, fn_method_caller works
+    assert (call create_fn_method_caller.("fc"), "fc", [8], context) == {:ok, "fc_8"}
+
+    add_method_caller mc, create_fn_method_caller.("fc")
+    add_method_caller mc, create_fn_method_caller.("fc_1")
+    add_method_caller mc1, create_fn_method_caller.("fc1")
+    add_method_caller mc2, create_fn_method_caller.("fc2")
+    add_method_caller mc21, create_fn_method_caller.("fc21")
+    add_method_caller mc21, create_fn_method_caller.("fc21_1")
+    add_method_caller mc211, create_fn_method_caller.("fc211")
+    add_method_caller mc, create_fn_method_caller.("fc_2")
+
+    Logger.warn("Complex router")
+    # simple call to complex router
+    assert (call mc, "fc", [8], context) == {:ok, "fc_8"}
+    Logger.warn("Ok 1")
+
+    assert (call mc, "fc_2", [8], context) == {:ok, "fc_2_8"}
+    Logger.warn("Ok 2")
+
 
     # and now call everything
     tini = :erlang.timestamp
-    for _ <- 1..1_000 do
-      assert (call mc, "mc", [], context) == {:ok, []}
-      assert (call mc, "mc1", [], context) == {:ok, []}
-      assert (call mc, "mc11", [], context) == {:ok, []}
-      assert (call mc, "mc12", [], context) == {:ok, []}
-      assert (call mc, "mc2", [], context) == {:ok, []}
-      assert (call mc, "mc21", [], context) == {:ok, []}
-      assert (call mc, "mc22", [], context) == {:ok, []}
-      assert (call mc, "mc22_", [], context) == {:ok, []}
-      assert (call mc, "mc211", [], context) == {:ok, []}
-      assert (call mc, "mc211", [], context) == {:ok, []}
+    for i <- 1..1_000 do
+      assert (call mc, "mc", [i*1], context) == {:ok, [i*1]}
+      assert (call mc, "mc1", [i*2], context) == {:ok, [i*2]}
+      assert (call mc, "mc11", [i*3], context) == {:ok, [i*3]}
+      assert (call mc, "mc12", [i*4], context) == {:ok, [i*4]}
+      assert (call mc, "mc2", [i*5], context) == {:ok, [i*5]}
+      assert (call mc, "mc21", [i*6], context) == {:ok, [i*6]}
+      assert (call mc, "mc22", [i*7], context) == {:ok, [i*7]}
+      assert (call mc, "mc22_", [i*8], context) == {:ok, [i*8]}
+      assert (call mc, "mc211", [i*9], context) == {:ok, [i*9]}
+      assert (call mc, "mc211", [i*10], context) == {:ok, [i*10]}
 
-      assert (call mc, "mc_", [], context) == {:ok, "mc_"}
-      assert (call mc, "mc_1", [], context) == {:ok, "mc_1"}
-      assert (call mc, "mc1_", [], context) == {:ok, "mc1_"}
-      assert (call mc, "mc2_", [], context) == {:ok, "mc2_"}
-      assert (call mc, "mc21_", [], context) == {:ok, "mc21_"}
-      assert (call mc, "mc21_1", [], context) == {:ok, "mc21_1"}
-      assert (call mc, "mc211_", [], context) == {:ok, "mc211_"}
-      assert (call mc, "mc_2", [], context) == {:ok, "mc_2"}
-      assert (call mc, "mc211_", [], context) == {:ok, "mc211_"}
-      assert (call mc, "mc_2", [], context) == {:ok, "mc_2"}
+      assert (call mc, "fc", [i*1], context) == {:ok, "fc_#{i*1}"}
+      assert (call mc, "fc_1", [i*2], context) == {:ok, "fc_1_#{i*2}"}
+      assert (call mc, "fc1", [i*3], context) == {:ok, "fc1_#{i*3}"}
+      assert (call mc, "fc2", [i*4], context) == {:ok, "fc2_#{i*4}"}
+      assert (call mc, "fc21", [i*5], context) == {:ok, "fc21_#{i*5}"}
+      assert (call mc, "fc21_1", [i*6], context) == {:ok, "fc21_1_#{i*6}"}
+      assert (call mc, "fc211", [i*7], context) == {:ok, "fc211_#{i*7}"}
+      assert (call mc, "fc_2", [i*8], context) == {:ok, "fc_2_#{i*8}"}
+      assert (call mc, "fc211", [i*9], context) == {:ok, "fc211_#{i*9}"}
+      assert (call mc, "fc_2", [i*10], context) == {:ok, "fc_2_#{i*10}"}
     end
     tend = :erlang.timestamp
     tdiff=:timer.now_diff(tend, tini)

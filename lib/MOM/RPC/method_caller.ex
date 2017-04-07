@@ -27,7 +27,7 @@ defmodule MOM.RPC.MethodCaller do
   alias MOM.RPC
 
   def start_link(options \\ []) do
-    {:ok, pid} = GenServer.start_link(__MODULE__, [], options)
+    {:ok, pid} = GenServer.start_link(__MODULE__, [name: Keyword.get(options, :name, nil)], options)
 
     {:ok, pid}
   end
@@ -253,17 +253,20 @@ defmodule MOM.RPC.MethodCaller do
   * {:error, e}
 
   """
-  def call(pid, method, params, context) do
-    async = Task.async(fn ->
-      async = self()
-      cast(pid, method, params, context, fn res ->
-        send async, res
-      end)
-      receive do
-        res -> res
-      end
-    end)
-    Task.await async, 60_000
+  def call(pid, method, params, context) when is_pid(pid) do
+    GenServer.call(pid, {:call, method, params, context}, 600_000)
+  end
+  def call(f, method, params, context) when is_function(f)  do
+    try do
+      f.(%RPC.Message{ method: method, params: params, context: context})
+    rescue
+      FunctionClauseError ->
+        Logger.warn("Function method caller did not accept input. May be too strict.\n #{Exception.format_stacktrace}")
+        {:error, :unknown_method}
+      other ->
+        Logger.error("#{Exception.format :error, other}")
+        {:error, other}
+    end
   end
 
   @doc ~S"""
@@ -311,19 +314,7 @@ defmodule MOM.RPC.MethodCaller do
 ```
   """
   def cast(f, method, params, context, cb) when is_function(f)  do
-    # function version, no use of gen server
-    ret = try do
-      f.(%RPC.Message{ method: method, params: params, context: context})
-    rescue
-      FunctionClauseError ->
-        Logger.warn("Function method caller did not accept input. May be too strict.\n #{Exception.format_stacktrace}")
-        {:error, :unknown_method}
-      other ->
-        Logger.error("#{Exception.format :error, other}")
-        {:error, other}
-    end
-    #Logger.debug("Method #{method} caller function #{inspect f} -> #{inspect ret}.")
-
+    ret = call(f, method, params, context)
     cb_params = case ret do
       {:ok, ret} -> {:ok, ret}
       {:error, :unknown_method} -> {:error, :unknown_method}
@@ -335,12 +326,22 @@ defmodule MOM.RPC.MethodCaller do
     cb.(cb_params)
   end
   def cast(pid, method, params, context, cb) when is_pid(pid) do
-    GenServer.call(pid, {:cast, method, params, context, cb }, 600_000)
+    #Logger.info("Call #{inspect pid}/#{method}")
+    #Logger.debug("cast call")
+    #res = GenServer.call(pid, {:cast, method, params, context, cb }, 600_000)
+    #Logger.info("Call cast result #{inspect pid}/#{method} -> #{inspect res}")
+    #res
+    Task.start(fn ->
+      res = call(pid, method, params, context)
+      cb.(res)
+    end)
+    :ok
   end
   # server impl
 
-  def init([]) do
+  def init([name: name]) do
     pid=self()
+    name = if name do name else inspect(self()) end
     state = %{
       methods: %{
         "dir" => {
@@ -351,7 +352,8 @@ defmodule MOM.RPC.MethodCaller do
           }
         },
       mc: [],
-      guards: []
+      guards: [],
+      name: name
     }
 
     {:ok, state}
@@ -413,69 +415,81 @@ defmodule MOM.RPC.MethodCaller do
     cb.({:ok, res })
     {:reply, :ok, status}
   end
-  def handle_call({:cast, method, params, context, cb}, from, status) do
-    #Logger.debug("Method #{method} caller pid #{inspect pid}, in #{inspect (Map.keys status.methods)} #{inspect Enum.map(status.mc, fn {f, options} -> Keyword.get options, :name, (inspect f) end) }")
+  def handle_call({:call, "dir", _params, context}, from, status) do
+    {:reply, dir, status} = handle_call({:dir, context}, from, status)
+    {:reply, {:ok, dir}, status}
+  end
+  def handle_call({:call, method, params, context}, from, status) do
+    #Logger.info("CALL Method #{method} caller pid #{status.name}, in #{inspect (Map.keys status.methods)} #{inspect Enum.map(status.mc, fn {f, options} -> Keyword.get options, :name, (inspect f) end) }")
     case Map.get status.methods, method do
       {f, options} ->
-        # Calls the function and the callback with the result, used in async and sync.
-        call_f = fn ->
-          if check_guards(%RPC.Message{ method: method, params: params, context: context}, options, status.guards) do
-            try do
-              v = if Keyword.get(options, :context, false) do
-                #Logger.debug("Calling with context #{inspect f} #{inspect options} #{inspect self()}")
-                f.(params, context)
-              else
-                #Logger.debug("Calling without context #{inspect f}")
-                f.(params)
-              end
-              #Logger.debug("Method #{method} caller function #{inspect f} -> #{inspect v}.")
-              case v do
-                {:error, e} ->
-                  cb.({:error, e })
-                {:ok, v} ->
-                  cb.({:ok, v })
-                v ->
-                  cb.({:ok, v })
-              end
-            rescue
-              CaseClauseError ->
-                Logger.error("Case clause error method #{method}\n#{Exception.format_stacktrace System.stacktrace}")
-                cb.({:error, :bad_arity})
-              FunctionClauseError ->
-                Logger.error("Function clause error method #{method}\n#{Exception.format_stacktrace System.stacktrace}")
-                cb.({:error, :bad_arity})
-              BadArityError ->
-                Logger.error("Bad arity error #{method}\n#{Exception.format_stacktrace System.stacktrace}")
-                cb.({:error, :bad_arity})
-              e ->
-                Logger.error("Error on method #{method}\n#{inspect e}\n#{Exception.format_stacktrace System.stacktrace}")
-                cb.({:error, e})
-            end
-          else # do not pass guards
-            cb.({:error, :unknown_method })
-          end
+        # sync or async, default async
+        #Logger.debug("CALL final function #{method}")
+        if Keyword.get(options, :async, true) do
+          Task.start( fn ->
+            Logger.debug("Async!")
+            ret = call_function_real(f, options, method, params, context, status)
+            GenServer.reply(from, ret)
+          end)
+          # is being processed
+          {:noreply, status}
+        else
+          res = call_function_real(f, options, method, params, context, status)
+          {:reply, res, status}
         end
+      nil ->
+        # Look for it at method callers. Use a task to prevent blocking.
+        if Enum.count(status.mc) > 0 do
+          #Logger.debug("CALL Checking MCs #{inspect status.mc}/#{inspect method}")
+          Task.start(fn ->
+            res = call_method_callers(status.mc, method, params, context, status)
+            #Logger.debug("CALL Got MC answer: #{method} -> #{inspect res} ")
+            GenServer.reply(from, res)
+            #Logger.debug("Call cast done #{inspect ret} at #{inspect self()}")
+          end)
+          {:noreply, status}
+        else # no mcs, then nok
+          {:reply, {:error, :unknown_method}, status}
+        end
+    end
+  end
 
+  def handle_call({:cast, method, params, context, cb}, from, status) do
+    Logger.info("Method #{method} caller pid #{status.name}, in #{inspect (Map.keys status.methods)} #{inspect Enum.map(status.mc, fn {f, options} -> Keyword.get options, :name, (inspect f) end) }")
+    case Map.get status.methods, method do
+      {f, options} ->
         # sync or async, default async
         if Keyword.get(options, :async, true) do
           Task.start fn ->
-            call_f.()
+            res = call_function_real(f, options, method, params, context, status)
+            cb.(res)
           end
           # is being processed
           {:reply, :ok, status}
         else
-          ret = call_f.()
-          {:reply, ret, status}
+          res = call_function_real(f, options, method, params, context, status)
+          cb.(res)
+          {:reply, :ok, status}
         end
       nil ->
-        # Look for it at method callers
-        #Logger.debug("Call cast from #{inspect self()} to #{inspect status.mc}")
-        Task.start(fn ->
-          ret = cast_mc(status.mc, method, params, context, status.guards, cb)
-          GenServer.reply(from, ret)
-          #Logger.debug("Call cast done #{inspect ret} at #{inspect self()}")
-        end)
-        {:noreply, status}
+        # Look for it at method callers. Use a task to prevent blocking.
+        if Enum.count(status.mc) > 0 do
+          #Logger.debug("Checking MCs #{inspect status.mc}/#{inspect method}")
+          Task.start(fn ->
+            res = call_method_callers(status.mc, method, params, context, status)
+            reply = case res do
+              {:error, :unknown_method} -> :nok
+              other ->
+                cb.(res)
+                :ok
+            end
+            GenServer.reply(from, reply)
+            #Logger.debug("Call cast done #{inspect ret} at #{inspect self()}")
+          end)
+          {:noreply, status}
+        else # no mcs, then nok
+          {:reply, :nok, status}
+        end
     end
   end
 
@@ -500,45 +514,73 @@ defmodule MOM.RPC.MethodCaller do
     end
   end
 
-  ~S"""
-  Casts a method caller from a list, and if any is ok, calls the callback
-  with the data, or error.
-
-  It must return :ok|:nok depending on if it was performed or not, and that makes
-  things more difficult.
-
-  To check each method caller, we have to cast into it in turns, and it signals
-  if it worked using the continuation function, whtat will be called with the
-  result ({:ok, v}, {:error, e}).
-
-  If the error is :unknown_method, we can asume this method caller did not
-  succed, so we can call the tail of the list t. If succeed, we call our
-  own continuation cb. And then using a process signal we give the
-  result to the original cast_mc.
+  @doc ~S"""
+  Performs the real call to a function, checking guards, with the given params
+  and so on.
   """
-  defp cast_mc([], _, _, _, _, cb) do # end of search, :unknown_method
-    #Logger.debug("No more Method Callers to call")
-    cb.({:error, :unknown_method})
-    :nok
-  end
-  defp cast_mc([{h, options} | t], method, params, context, guards, cb) do
-    #Logger.debug("Cast mc #{Keyword.get options, :name, (inspect h)}")
-    if check_guards(
-          %RPC.Message{ method: method, params: params, context: context},
-          options, guards) do
-        cast(h, method, params, context, fn
-          # Keep searching for it
-          {:error, :unknown_method} ->
-            cast_mc(t, method, params, context, guards, cb)
-          # done
-          other ->
-            #Logger.debug("Done #{inspect other}")
-            cb.(other)
-        end)
-    else
-      # skip, guards not passed
-      cast_mc(t, method, params, context, guards, cb)
+  def call_function_real(f, options, method, params, context, status) do
+    Logger.debug("Call final function #{method}")
+    if check_guards(%RPC.Message{ method: method, params: params, context: context}, options, status.guards) do
+      res = try do
+        v = if Keyword.get(options, :context, false) do
+          #Logger.debug("Calling with context #{inspect f} #{inspect options} #{inspect self()}")
+          f.(params, context)
+        else
+          #Logger.debug("Calling without context #{inspect f}")
+          f.(params)
+        end
+        #Logger.debug("Method #{method} caller function #{inspect f} -> #{inspect v}.")
+        case v do
+          {:error, e} ->
+            {:error, e }
+          {:ok, v} ->
+            {:ok, v }
+          v ->
+            {:ok, v }
+        end
+      rescue
+        CaseClauseError ->
+          Logger.error("Case clause error method #{method}\n#{Exception.format_stacktrace System.stacktrace}")
+          {:error, :bad_arity}
+        FunctionClauseError ->
+          Logger.error("Function clause error method #{method}\n#{Exception.format_stacktrace System.stacktrace}")
+          {:error, :bad_arity}
+        BadArityError ->
+          Logger.error("Bad arity error #{method}\n#{Exception.format_stacktrace System.stacktrace}")
+          {:error, :bad_arity}
+        e ->
+          Logger.error("Error on method #{method}\n#{inspect e}\n#{Exception.format_stacktrace System.stacktrace}")
+          {:error, e}
+      end
+      Logger.debug("Call final function #{method} -> #{inspect res}")
+      res
+    else # do not pass guards
+      Logger.debug("Call final function #{method} -> fail guards")
+      {:error, :unknown_method }
     end
+  end
+
+  def call_method_callers(mcs, method, params, context, status) do
+    #ret = cast_mc(status.mc, method, params, context, status.guards)
+    any = Enum.reduce_while(mcs, {:error, :unknown_method}, fn {mc, options}, acc ->
+      if check_guards(
+            %RPC.Message{ method: method, params: params, context: context},
+            options, status.guards) do
+        res = call(mc, method, params, context)
+        #Logger.debug("Got #{inspect res} from #{inspect mc}")
+        case res do
+          {:error, :unknown_method} -> # cant run it at that MC
+            {:cont, acc}
+          :nok -> # cant run it at that MC
+            {:cont, acc}
+          res -> # ok!
+            {:halt, res}
+        end
+      else
+        # no guard
+        {:cont, acc}
+      end
+    end)
   end
 
 end
