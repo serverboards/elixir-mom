@@ -22,7 +22,6 @@ defmodule MOM.RPC.Endpoint.Caller do
   end
 
   def call(client, method, params, timeout \\ 60_000) do
-    Logger.debug("Call!")
     GenServer.call(client.pid, {:call, method, params}, timeout)
   end
 
