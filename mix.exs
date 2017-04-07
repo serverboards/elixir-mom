@@ -3,7 +3,7 @@ defmodule MOM.Mixfile do
 
   def project do
     [app: :mom,
-     version: "0.4.3",
+     version: "0.5.0",
      elixir: "~> 1.2",
      name: "Elixir MOM",
      build_embedded: Mix.env == :prod,
