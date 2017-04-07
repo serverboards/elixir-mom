@@ -354,7 +354,6 @@ defmodule MOM.RPC.MethodCaller do
         #Logger.debug("CALL final function #{method}")
         if Keyword.get(options, :async, true) do
           Task.start( fn ->
-            Logger.debug("Async!")
             ret = call_function_real(f, options, method, params, context, status)
             GenServer.reply(from, ret)
           end)
@@ -407,7 +406,7 @@ defmodule MOM.RPC.MethodCaller do
   and so on.
   """
   def call_function_real(f, options, method, params, context, status) do
-    Logger.debug("Call final function #{method}")
+    #Logger.debug("Call final function #{method}")
     if check_guards(%RPC.Message{ method: method, params: params, context: context}, options, status.guards) do
       res = try do
         v = if Keyword.get(options, :context, false) do
@@ -440,10 +439,10 @@ defmodule MOM.RPC.MethodCaller do
           Logger.error("Error on method #{method}\n#{inspect e}\n#{Exception.format_stacktrace System.stacktrace}")
           {:error, e}
       end
-      Logger.debug("Call final function #{method} -> #{inspect res}")
+      #Logger.debug("Call final function #{method} -> #{inspect res}")
       res
     else # do not pass guards
-      Logger.debug("Call final function #{method} -> fail guards")
+      #Logger.debug("Call final function #{method} -> fail guards")
       {:error, :unknown_method }
     end
   end
