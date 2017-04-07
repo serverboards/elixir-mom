@@ -221,11 +221,11 @@ defmodule Serverboards.MethodCallerTest do
     {:ok, mc} = RPC.MethodCaller.start_link
     RPC.Endpoint.MethodCaller.add_method_caller rpc_mc, mc
 
-      RPC.MethodCaller.add_method mc, "foo", fn _ ->
-        Logger.debug("Wait 2s #{inspect self()}")
-        :timer.sleep(2_000)
-        {:ok, :ok}
-      end
+    RPC.MethodCaller.add_method mc, "foo", fn _ ->
+      Logger.debug("Wait 2s #{inspect self()}")
+      :timer.sleep(2_000)
+      {:ok, :ok}
+    end
 
     # one call, sync, for control
     t = measure(fn ->
@@ -250,6 +250,25 @@ defmodule Serverboards.MethodCallerTest do
     assert t < 3
 
     Logger.debug("Done")
+  end
+
+  test "Accepts calls longer than 5sec" do
+    {:ok, rpc} = RPC.start_link
+    {:ok, rpc_mc} = RPC.Endpoint.MethodCaller.start_link(rpc)
+    {:ok, caller} = RPC.Endpoint.Caller.start_link(rpc)
+    {:ok, mc} = RPC.MethodCaller.start_link
+    RPC.Endpoint.MethodCaller.add_method_caller rpc_mc, mc
+
+    RPC.MethodCaller.add_method mc, "foo", fn _ ->
+      Logger.debug("Wait 10s, no timeout #{inspect self()}")
+      :timer.sleep(10_000)
+      {:ok, :ok}
+    end
+    t = measure(fn ->
+      RPC.Endpoint.Caller.call(caller, "foo", [])
+    end)
+    assert t > 10
+    assert t < 12
   end
 
 end
