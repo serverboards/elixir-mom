@@ -438,6 +438,10 @@ defmodule MOM.RPC.MethodCaller do
         e ->
           Logger.error("Error on method #{method}\n#{inspect e}\n#{Exception.format_stacktrace System.stacktrace}")
           {:error, e}
+      catch
+        :exit, data -> # {code, _} = data
+          Logger.error("Error calling #{inspect method}, process was not running (#{inspect data}).\n#{Exception.format_stacktrace System.stacktrace}")
+          {:error, :exit}
       end
       #Logger.debug("Call final function #{method} -> #{inspect res}")
       res
