@@ -50,7 +50,7 @@ defmodule MOM.Mixfile do
   defp deps do
     [
       {:poison, "~> 3.1"},
-      {:uuid, "~> 1.1" },
+      {:uuid, "~> 1.1.8" },
       {:ex_doc, "~> 0.14", only: :dev},
       {:cmark, ">= 0.7.0", only: :dev},
     ]
