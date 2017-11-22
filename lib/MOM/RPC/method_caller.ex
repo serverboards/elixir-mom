@@ -453,7 +453,7 @@ defmodule MOM.RPC.MethodCaller do
 
   def call_method_callers(mcs, method, params, context, status) do
     #ret = cast_mc(status.mc, method, params, context, status.guards)
-    any = Enum.reduce_while(mcs, {:error, :unknown_method}, fn {mc, options}, acc ->
+    _any = Enum.reduce_while(mcs, {:error, :unknown_method}, fn {mc, options}, acc ->
       if check_guards(
             %RPC.Message{ method: method, params: params, context: context},
             options, status.guards) do

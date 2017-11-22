@@ -78,7 +78,7 @@ defmodule MOM.Channel.Broadcast do
           case f.(msg) do
             :unsubscribe ->
               nil
-            other ->
+            _other ->
               {options, f}
           end
         catch
