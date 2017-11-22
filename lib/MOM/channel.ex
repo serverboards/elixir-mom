@@ -156,7 +156,10 @@ defmodule MOM.Channel.Base do
       end
 
       def stop(pid) do
-        GenServer.stop(pid)
+        GenServer.stop(pid.pid)
+      end
+      def stop(pid, reason) do
+        GenServer.stop(pid.pid, reason)
       end
 
       @doc ~S"""
@@ -215,7 +218,7 @@ defmodule MOM.Channel.Base do
         }}
       end
 
-      defoverridable [init: 1, stop: 1, subscribe: 3, unsubscribe: 2, start_link: 0]
+      defoverridable [init: 1, stop: 1, stop: 2, subscribe: 3, unsubscribe: 2, start_link: 0]
     end
   end
 end

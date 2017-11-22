@@ -143,4 +143,33 @@ defmodule Serverboards.RPC.ClientTest do
 
     Client.stop(client)
   end
+
+  test "No process leaking" do
+    pre_proc = :erlang.processes()
+    pre_count = Enum.count(pre_proc)
+
+    {:ok, client} = Client.start_link writef: :context
+
+    Client.add_method client, "echo", &(&1)
+    # :timer.sleep(300) # settle time?
+
+    mid_proc = :erlang.processes()
+    mid_count = Enum.count(mid_proc)
+
+    Client.stop(client)
+    # :timer.sleep(300)
+
+    post_proc = :erlang.processes()
+    post_count = Enum.count(post_proc)
+
+    rem_proc = post_proc -- pre_proc
+
+    Logger.info("Pre #{pre_count}, mid #{mid_count}, post_count #{post_count}")
+    Logger.info("Still running: #{inspect rem_proc}")
+    for p <- rem_proc do
+      Logger.info("#{inspect p}: #{inspect (Process.info(p)[:registered_name])} #{inspect (Process.info(p)[:dictionary][:"$initial_call"]), pretty: true}")
+    end
+
+    assert pre_count == post_count, "Some processes were leaked"
+  end
 end

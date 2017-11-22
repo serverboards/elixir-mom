@@ -71,7 +71,7 @@ defmodule MOM.RPC do
   @doc ~S"""
   Stops the server
   """
-  def stop(rpc) do
+  def stop(rpc, reason \\ :normal) do
     MOM.Channel.PointToPoint.stop(rpc.request)
     MOM.Channel.PointToPoint.stop(rpc.reply)
   end

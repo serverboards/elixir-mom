@@ -22,6 +22,9 @@ defmodule MOM.RPC.Client do
     method_caller: nil,
     caller: nil,
     context: nil,
+    context_owner: nil,
+    rpc_a: nil,
+    rpc_b: nil,
     pid: nil
   ]
   @doc ~S"""
@@ -43,12 +46,12 @@ defmodule MOM.RPC.Client do
   def start_link(options \\ []) do
 
     # Create new context, or reuse given one.
-    context = case Keyword.get(options, :context, nil) do
+    {context, context_owner} = case Keyword.get(options, :context, nil) do
       nil ->
         {:ok, context} = RPC.Context.start_link
-        context
+        {context, true}
       context ->
-        context
+        {context, false}
     end
 
     options = options ++ [context: context]
@@ -91,6 +94,9 @@ defmodule MOM.RPC.Client do
       method_caller: method_caller,
       caller: caller,
       context: context,
+      context_owner: context_owner,
+      rpc_a: rpc_a,
+      rpc_b: rpc_b,
       pid: pid
     }
 
@@ -100,7 +106,19 @@ defmodule MOM.RPC.Client do
   end
 
   def stop(client, reason \\ :normal) do
+    Logger.debug("Stop client #{inspect client}")
     Agent.stop(client.pid, reason)
+    if client.context_owner do
+      RPC.Context.stop(client.context, reason)
+    end
+    Endpoint.MethodCaller.stop(client.method_caller, reason)
+    Endpoint.Caller.stop(client.caller, reason)
+    RPC.stop(client.rpc_a, reason)
+    RPC.stop(client.rpc_b, reason)
+
+    Logger.debug("Done")
+    # MethodCaller.stop(client.method_caller, reason)
+    # Endpoint.JSON.stop(client.json)
   end
 
   # to JSON

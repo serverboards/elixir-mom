@@ -43,7 +43,7 @@ defmodule MOM.RPC.Endpoint.MethodCaller do
     {:ok, client}
   end
 
-  def stop(caller, reason) do
+  def stop(caller, reason \\ :normal) do
     RPC.MethodCaller.stop(caller.method_caller, reason)
   end
 
