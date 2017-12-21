@@ -106,7 +106,7 @@ defmodule MOM.RPC.Client do
   end
 
   def stop(client, reason \\ :normal) do
-    Logger.debug("Stop client #{inspect client}")
+    #Logger.debug("Stop client #{inspect client}")
     Agent.stop(client.pid, reason)
     if client.context_owner do
       RPC.Context.stop(client.context, reason)
@@ -116,7 +116,7 @@ defmodule MOM.RPC.Client do
     RPC.stop(client.rpc_a, reason)
     RPC.stop(client.rpc_b, reason)
 
-    Logger.debug("Done")
+    #Logger.debug("Done")
     # MethodCaller.stop(client.method_caller, reason)
     # Endpoint.JSON.stop(client.json)
   end
