@@ -173,7 +173,71 @@ defmodule Serverboards.MethodCallerTest do
     end
     tend = :erlang.timestamp
     tdiff=:timer.now_diff(tend, tini)
-    Logger.info("20_000 RPC calls in #{tdiff / 1000.0} ms, #{20_000 / (tdiff / 1_000_000)} call/s")
+    IO.puts("\n20_000 RPC calls in #{tdiff / 1000.0} ms, #{20_000 / (tdiff / 1_000_000)} call/s\n")
+  end
+
+  def benchmark(func) do
+    tini = :erlang.timestamp
+
+    data = func.()
+
+    tend = :erlang.timestamp
+    tdiff=:timer.now_diff(tend, tini) / 1_000_000.0
+    {data, tdiff}
+  end
+
+  @tag timeout: 90_000
+  test "Basic method caller benchmark" do
+    tini0 = :erlang.timestamp
+    Logger.debug("Mem total: #{inspect :erlang.memory()[:total], pretty: true}")
+
+    import MOM.RPC.MethodCaller
+    {:ok, context} = RPC.Context.start_link
+    {:ok, mc} = RPC.MethodCaller.start_link name: :"mc"
+
+    {{tbig, tsmall}, ttotal} = benchmark fn ->
+      bigdata = for n <- 0..100_000 do
+        {:ok, n, "This is bigdata"}
+      end
+
+      Logger.debug("Data is #{:erts_debug.size(bigdata)} bytes #{inspect(hd bigdata)}")
+      Logger.debug("Memtotal: #{inspect :erlang.memory()[:total], pretty: true}")
+
+      RPC.MethodCaller.add_method mc, "benchbig", fn bigdata ->
+        {:ok, Enum.count(bigdata)}
+      end
+
+      ncalls = 5_000
+      {_, tbig} = benchmark fn ->
+        Enum.reduce(1..ncalls, 0, fn acc, n ->
+          RPC.MethodCaller.call mc, "test", [bigdata], context
+        end)
+      end
+      IO.puts("#{ncalls} calls in #{tbig}s. #{ncalls / tbig} calls/s")
+      Logger.debug("Bigdata #{ncalls} calls in #{tbig}s. #{ncalls / tbig} calls/s")
+      Logger.debug("Bigdata Memtotal #{inspect :erlang.memory()[:total], pretty: true}")
+
+      {_, tsmall} = benchmark fn ->
+        smalldata = hd bigdata
+        Enum.reduce(1..ncalls, 0, fn acc, n ->
+          RPC.MethodCaller.call mc, "test", smalldata, context
+        end)
+      end
+      IO.puts("#{ncalls} calls in #{tsmall}s. #{ncalls / tsmall} calls/s")
+      Logger.debug("Smalldata #{ncalls} calls in #{tsmall}s. #{ncalls / tsmall} calls/s")
+      Logger.debug("Smalldata Memtotal #{inspect :erlang.memory()[:total], pretty: true}")
+
+      {tbig, tsmall}
+    end
+
+    Logger.debug("Total time #{inspect ttotal}s / ratio #{tbig / tsmall}")
+    Logger.debug("This checks that there is no copious copying of data, " <>
+                 "as actually no data copy should occur, and so it should " <>
+                 "take the same time do both tests")
+    assert (tbig / tsmall) < 10, "Tbig sould not be more than 10 times slower than tsmall (Its #{tbig / tsmall})"
+
+
+    flunk 1
   end
 
   # Checks a strange bug, explained at MethodCaller.cast_mc
@@ -210,7 +274,7 @@ defmodule Serverboards.MethodCallerTest do
     function
     |> :timer.tc
     |> elem(0)
-    |> Kernel./(1_000_000)
+    |> Kernel./(1_000)
   end
 
 

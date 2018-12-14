@@ -1,6 +1,6 @@
 require Logger
 
-defprotocol MOM.Channel do
+defmodule MOM.Channel do
   @moduledoc ~S"""
   A channel of communication. Subscribers are functions that will be
   called when somebody sends a message.
@@ -98,127 +98,88 @@ defprotocol MOM.Channel do
   :ok
 
 ```
+
+  -- rework
+
+  Uses ETS to keep the subscribers and a pointer to the dispatch method.
+
+  Dispatch will get the channel, message and options.
+
+  It should do the boracast, point to point or whatever.
+
+  Named channels are intrinsic with a try / catch if named channel does not
+  exist.
   """
 
-  def subscribe(channel, function, options \\ [])
-  def unsubscribe(channel, id)
-  def send(channel, message, options \\ [], timeout \\ 5_000)
-end
-
-
-defimpl MOM.Channel, for: Any do
+  @doc ~S"""
+  Subscribes to a channel.
+  """
   def subscribe(channel, function, options \\ []) do
-    channel.__struct__.subscribe(channel, function, options)
+    GenServer.call(channel, {:subscribe, function, options})
   end
+  @doc "Unsubscribes to a channel"
   def unsubscribe(channel, id) do
-    channel.__struct__.unsubscribe(channel, id)
+    GenServer.call(channel, {:unsubscribe, id})
   end
-  def send(channel, msg, options \\ [], timeout \\ 5_000) do
-    channel.__struct__.send(channel, msg, options, timeout)
+
+  def send(channel, message, options \\ [], timeout \\ 5_000) do
+    {:ok, {mod, fun, args}} = GenServer.call(channel, {:get_dispatcher})
+    apply(mod, fun, args ++ [message, options])
   end
-end
 
-defmodule MOM.Channel.Base do
-  @moduledoc ~S"""
-  Default implementation of channel protocol as a GenServer.
+  def start_link(options \\ []) do
+    GenServer.start_link(__MODULE__, %{}, options)
+  end
 
-  An implementation may be as simple as:
-  ```
-    defmodule MyChannel do
-      using MOM.Channel.Base
+  ## basic server impl
+  def init(state) do
+    table = :ets.new(:subscriptions, [])
 
-      def send(channel, msg) do
-        # ...
-      end
+    state = Map.merge(state, %{ maxid: 0, table: table})
+
+    state = if not :dispatch in state do
+      Map.put(state, :dispatch, {__MODULE__, :handle_dispatch, []})
+    else state end
+
+    {:ok, state}
+  end
+
+  def handle_call({:subscribe, func, options}, _from, state) do
+    maxid = state.maxid
+    subscriptions = :ets.insert(state.table, {maxid, {func, options}})
+
+    state = %{ state
+      | maxid: state.maxid + 1
+    }
+
+    {:reply, {:ok, maxid}, state}
+  end
+
+  def handle_call({:unsubscribe, id}, _from, state) do
+    deleted = case :ets.lookup(state.table, id) do
+      [{^id, _}] ->
+        :ets.delete(state.table, id)
+        true
+      [] ->
+        false
     end
-  ```
+    Logger.debug("Ndeleted #{inspect deleted}")
 
-  init, subscribe and unsubscribe are base implemented. Default channels
-  are GenServer s.
+    {:reply, deleted, state}
+  end
 
-  Check Channel.Broadcast for a complete implementation.
-  """
-
-  defmacro __using__(_opts) do
-    quote do
-      # manual derive Channel
-      @derive MOM.Channel
-
-      defstruct [:pid]
-      use GenServer
-
-      @doc ~S"""
-      Starts the link
-      """
-      def start_link do
-        {:ok, pid} = GenServer.start_link(__MODULE__, :ok, [])
-        {:ok, %{ __struct__: __MODULE__, pid: pid } }
-      end
-
-      def stop(pid) do
-        GenServer.stop(pid.pid)
-      end
-      def stop(pid, reason) do
-        GenServer.stop(pid.pid, reason)
-      end
-
-      @doc ~S"""
-      Subscribes to a channel.
-      """
-      def subscribe(channel, subscriber, options) when is_function(subscriber) do
-        #Logger.debug("Subscribe #{inspect channel} executes #{inspect subscriber}")
-        GenServer.call(channel.pid, {:subscribe, subscriber, options})
-      end
-      def subscribe(orig, dest, options) do
-        #Logger.debug("Subscribe #{inspect orig} send to #{inspect dest}")
-        subscribe(orig, fn msg ->
-          ret = MOM.Channel.send(dest, msg)
-          #Logger.debug("Chain result #{inspect ret}")
-          ret
-        end, options)
-
-        #&MOM.Channel.send(dest, &1), options)
-      end
+  def handle_call({:get_dispatcher}, _from, state) do
+    {mod, fun, args} = state.dispatch
+    {:reply, {:ok, {mod, fun, args ++ [state.table]}}, state}
+  end
 
 
-      @doc "Unsubscribes to a channel"
-      def unsubscribe(channel, subscriber) do
-        GenServer.call(channel.pid, {:unsubscribe, subscriber})
-      end
-
-      ## Server impl.
-
-      @doc ~S"""
-      state is just the subscriber list callbacks, it will call each function
-      with the message.
-      """
-      def init(:ok) do
-        {:ok, %{
-          maxid: :rand.uniform(100) * 1000,
-          subscribers: [] # each {id, fn}, almost a map, but with ordering. id used to unsubscribe.
-          }}
-      end
-
-      def handle_call({:subscribe, s, options}, _, state) do
-        subscribers = if Keyword.get(options, :front, false) do
-          [{state.maxid, s}] ++ state.subscribers
-        else
-          state.subscribers ++ [{state.maxid, s}]
-        end
-
-        {:reply, state.maxid,  %{ state |
-            subscribers: subscribers,
-            maxid: state.maxid+1
-          }  }
-      end
-
-      def handle_call({:unsubscribe, s}, _, state) do
-        {:reply, :ok, %{ state |
-          subscribers: Enum.filter(state.subscribers, fn {id, _ } -> id != s end)
-        }}
-      end
-
-      defoverridable [init: 1, stop: 1, stop: 2, subscribe: 3, unsubscribe: 2, start_link: 0]
-    end
+  def handle_dispatch(table, message, options) do
+    # this code is called back at process caller of send
+    :ets.foldl(fn {_, {func, opts}}, acc ->
+      # Logger.debug("Call #{inspect {func, opts}} / #{inspect acc}")
+      func.(message)
+      acc + 1
+    end, 0, table)
   end
 end

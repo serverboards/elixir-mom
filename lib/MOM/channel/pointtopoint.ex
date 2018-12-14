@@ -1,8 +1,6 @@
 require Logger
 
 defmodule MOM.Channel.PointToPoint do
-  use MOM.Channel.Base
-
   @moduledoc ~S"""
   Special channel on which only one competing consumer consume messages.
 
@@ -72,105 +70,22 @@ defmodule MOM.Channel.PointToPoint do
 ```
 
   """
-
-  alias MOM.{Message, Channel}
-
-  @doc ~S"""
-  Sends a message to the channel.
-
-  Avaialble options are:
-  * :all -- Sends to all channels, behaving as a broadcast channel.
-  """
-  def send(channel, %Message{} = message, options, timeout) do
-    GenServer.call(channel.pid, {:send, message, options}, timeout)
+  def start_link(options \\ []) do
+    MOM.Channel.start_link(dispatcher: {__MODULE__, :handle_dispatch, []})
   end
 
-  ## Server impl
-
-  @doc ~S"""
-  Dispatchs a message to a list of subscribers.
-
-  Returns a list of subscribers that must be removed as they have exitted.
-  """
-  def dispatch([], _msg), do: {:nok, []}
-  def dispatch([ {id, f} | rest ], msg) do
-    ok = try do
-      f.(msg)
-    catch
-      :exit, { cause, where} ->
-        Logger.warn("Message #{inspect msg} to p2p channel into a exitted process. Removing listener. #{inspect cause}")
-        Logger.debug(inspect where)
-        :exit
-    rescue
-      e ->
-        Channel.send(:invalid, %Message{ msg | error: {e, System.stacktrace()}} )
-        Logger.error("Error sending #{inspect msg} to #{inspect f}. Sent to :invalid messages channel.\n#{inspect e}\n#{ Exception.format_stacktrace System.stacktrace }")
-        :nok
-    end
-
-    case ok do
-      :ok ->
-        {:ok, []}
-      :unsubscribe ->
-        {ok, [{id, f}]}
-      :exit -> # remove me, and any that later was said to be for removal
-        {ok, toremove} = dispatch(rest, msg)
-        {ok, [{id, f}] ++ toremove}
-      :nok ->
-        dispatch(rest, msg)
-    end
-  end
-
-  @doc ~S"""
-  Calls all subscribers in order until one returns :ok. If none returns :ok,
-  returns :nok.
-
-  Returns :empty if there are no subscribers.
-
-  If no subscribers returns :empty
-  """
-  def handle_call({:send, msg, []}, from, state) do
-    ret = if Enum.count(state.subscribers) == 0 do
-      {:reply, :empty, state}
-    else
-      pid = self()
-      Task.start(fn ->
-        {ok, toremove} = dispatch(state.subscribers, msg)
-
-        if toremove != [] do
-          GenServer.cast(pid, {:remove, toremove})
+  def handle_dispatch(table, message, options) do
+    # this code is called back at process caller of send
+    :ets.foldl(fn
+      {func, opts}, :cont ->
+        case func.(message) do
+          :ok -> :cont
+          :unsubscribe -> :stop
+          :exit -> :stop
+          :nok -> :stop
         end
-
-        if ok == :nok do
-          Channel.send(:deadletter, %{ msg | error: :deadletter })
-        end
-
-        GenServer.reply(from, ok)
-      end)
-      {:noreply, state}
-    end
-
-    ret
-  end
-
-  def handle_call({:send, msg, options}, from, state) do
-    if Enum.member? options, :all do
-      MOM.Channel.Broadcast.handle_call({:send, msg, []}, from, state)
-    else
-      handle_call({:send, msg, []}, from, state)
-    end
-  end
-
-  def handle_cast({:remove, toremove}, state) do
-    subscribers = Enum.filter(state.subscribers, &(not &1 in toremove))
-    {:noreply, %{ state | subscribers: subscribers }}
-  end
-
-  # ignore these messages, they come from creating a task for every call at MOM/method_caller.ex:309
-  def handle_info({_ref, :ok}, state), do: {:noreply, state}
-  def handle_info({:DOWN, _ref, :process, _pid, :normal}, state), do: {:noreply, state}
-  def handle_info(any, state) do
-    Logger.warn("Received unexpected message: #{inspect any}")
-    {:noreply, state}
+      _, :stop ->
+        :stop
+    end, :cont, table)
   end
 end

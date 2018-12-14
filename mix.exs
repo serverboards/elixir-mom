@@ -24,7 +24,6 @@ defmodule MOM.Mixfile do
   def application do
     [
       applications: [:logger],
-      mod: {MOM, []}
     ]
   end
 
