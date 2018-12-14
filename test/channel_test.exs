@@ -3,6 +3,8 @@ require Logger
 defmodule MOMTest do
   use ExUnit.Case, async: true
   @moduletag :capture_log
+  import ExUnit.CaptureLog
+
 
   test "Simple channel" do
     {:ok, channel} = MOM.Channel.start_link()
@@ -182,5 +184,25 @@ defmodule MOMTest do
 
     MOM.Channel.send(:test_dead, %{})
     assert :ets.lookup(res, :res) == [res: 1]
+  end
+
+  test "If there is some big fail at a send, just log it" do
+    MOM.Channel.subscribe(:big_fail_test, fn _msg ->
+      Logger.debug("Test")
+      raise "Error at big fail test"
+    end)
+    MOM.Channel.subscribe(:big_fail_test, fn _msg ->
+      pid = Task.async(fn -> end)
+      :timer.sleep(100)
+      send(pid, {:message_to_dead_process})
+    end)
+    captured = capture_log(fn ->
+      MOM.Channel.send(:big_fail_test, %{})
+    end)
+
+    Logger.debug("Captured #{inspect captured}")
+
+    assert String.contains?(captured, "Error at big fail test")
+    assert String.contains?(captured, "argument error")
   end
 end

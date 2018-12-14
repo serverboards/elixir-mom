@@ -190,7 +190,6 @@ defmodule MOM.Channel do
   end
 
   def handle_call({:subscribe, func, options}, _from, state) do
-    Logger.debug("Options subs #{inspect options}")
     maxid = state.maxid
 
     ref = case options[:monitor] do
@@ -231,10 +230,18 @@ defmodule MOM.Channel do
   def handle_dispatch(table, message, options) do
     # this code is called back at process caller of send
     :ets.foldl(fn {_, {func, opts, _ref}}, acc ->
-      Logger.debug("Call #{inspect {func, opts}} / #{inspect acc}")
-      func.(message)
+      dispatch_one(func, message)
       acc + 1
     end, 0, table)
+  end
+
+  def dispatch_one(func, message) do
+    try do
+      func.(message)
+    rescue
+      error ->
+        Logger.error("Error sending message id #{inspect message[:id]}, error: #{inspect error}.")
+    end
   end
 
   def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
