@@ -110,4 +110,31 @@ defmodule MOMTest do
     MOM.Channel.stop(channel)
   end
 
+
+  test "Point To Point Channels stop on first that returns :stop. Else return :cont." do
+    {:ok, channel} = MOM.Channel.PointToPoint.start_link()
+    res = :ets.new(:res, [])
+    :ets.insert(res, {:res, 0})
+
+    {:ok, first_id} = MOM.Channel.subscribe(channel, fn _message ->
+      [res: n] = :ets.lookup(res, :res)
+      :ets.insert(res, {:res, n+1})
+      :stop
+    end)
+    {:ok, second_id} = MOM.Channel.subscribe(channel, fn _message ->
+      [res: n] = :ets.lookup(res, :res)
+      :ets.insert(res, {:res, n * 20})
+      :cont
+    end)
+    n = MOM.Channel.send(channel, %{})
+    assert :ets.lookup(res, :res) == [res: 1]
+
+    MOM.Channel.unsubscribe(channel, first_id)
+    n = MOM.Channel.send(channel, %{})
+    assert :ets.lookup(res, :res) == [res: 20]
+
+    MOM.Channel.unsubscribe(channel, second_id)
+    n = MOM.Channel.send(channel, %{})
+    assert :ets.lookup(res, :res) == [res: 20]
+  end
 end

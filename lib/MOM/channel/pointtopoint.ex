@@ -71,19 +71,14 @@ defmodule MOM.Channel.PointToPoint do
 
   """
   def start_link(options \\ []) do
-    MOM.Channel.start_link(dispatcher: {__MODULE__, :handle_dispatch, []})
+    MOM.Channel.start_link(dispatch: {__MODULE__, :handle_dispatch, []})
   end
 
   def handle_dispatch(table, message, options) do
     # this code is called back at process caller of send
     :ets.foldl(fn
-      {func, opts}, :cont ->
-        case func.(message) do
-          :ok -> :cont
-          :unsubscribe -> :stop
-          :exit -> :stop
-          :nok -> :stop
-        end
+      {_id, {func, opts}}, :cont ->
+        func.(message)
       _, :stop ->
         :stop
     end, :cont, table)

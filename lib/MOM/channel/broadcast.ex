@@ -62,7 +62,6 @@ defmodule MOM.Channel.Broadcast do
   end
 
   def handle_dispatch(table, message, options) do
-    Logger.debug("Broadcast dispatch!")
     Task.async(fn ->
       MOM.Channel.handle_dispatch(table, message, options)
     end)
