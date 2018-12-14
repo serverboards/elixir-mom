@@ -121,9 +121,13 @@ defmodule MOM.Channel do
   end
   def subscribe(channel, function, options) when is_atom(channel) do
     pid = get_or_create_channel(channel)
-    GenServer.call(pid, {:subscribe, function, options})
+    subscribe(pid, function, options)
   end
   def subscribe(channel, function, options) do
+    options = if options[:monitor] == nil do
+      [{:monitor, self()} | options]
+    end
+
     GenServer.call(channel, {:subscribe, function, options})
   end
   @doc "Unsubscribes to a channel"
@@ -162,9 +166,11 @@ defmodule MOM.Channel do
   defp get_or_create_channel(channel) do
     case Process.whereis(channel) do
         pid when is_pid(pid) -> pid
-        other ->
-          {:ok, pid} = start_link(name: channel)
-          pid
+        nil ->
+          case start_link(name: channel) do
+            {:ok, pid} -> pid
+            {:error, {:already_started, pid}} -> pid
+          end
     end
   end
 
@@ -172,8 +178,9 @@ defmodule MOM.Channel do
   ## basic server impl
   def init(state) do
     table = :ets.new(:subscriptions, [])
+    monitored = :ets.new(:monitored, [])
 
-    state = Map.merge(state, %{ maxid: 0, table: table})
+    state = Map.merge(state, %{ maxid: 0, table: table, monitored: monitored})
 
     state = if Map.get(state, :dispatch) == nil do
       Map.put(state, :dispatch, {__MODULE__, :handle_dispatch, []})
@@ -183,8 +190,17 @@ defmodule MOM.Channel do
   end
 
   def handle_call({:subscribe, func, options}, _from, state) do
+    Logger.debug("Options subs #{inspect options}")
     maxid = state.maxid
-    subscriptions = :ets.insert(state.table, {maxid, {func, options}})
+
+    ref = case options[:monitor] do
+      pid ->
+        ref = Process.monitor(pid)
+        :ets.insert(state.monitored, {ref, maxid})
+        ref
+    end
+
+    subscriptions = :ets.insert(state.table, {maxid, {func, options, ref}})
 
     state = %{ state
       | maxid: state.maxid + 1
@@ -195,7 +211,8 @@ defmodule MOM.Channel do
 
   def handle_call({:unsubscribe, id}, _from, state) do
     deleted = case :ets.lookup(state.table, id) do
-      [{^id, _}] ->
+      [{^id, {_func, _options, ref}}] ->
+        :ets.delete(state.monitored, ref)
         :ets.delete(state.table, id)
         true
       [] ->
@@ -213,10 +230,17 @@ defmodule MOM.Channel do
 
   def handle_dispatch(table, message, options) do
     # this code is called back at process caller of send
-    :ets.foldl(fn {_, {func, opts}}, acc ->
-      # Logger.debug("Call #{inspect {func, opts}} / #{inspect acc}")
+    :ets.foldl(fn {_, {func, opts, _ref}}, acc ->
+      Logger.debug("Call #{inspect {func, opts}} / #{inspect acc}")
       func.(message)
       acc + 1
     end, 0, table)
+  end
+
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
+    [{^ref, id}] = :ets.lookup(state.monitored, ref)
+    {:reply, true, state} = handle_call({:unsubscribe, id}, nil, state)
+
+    {:noreply, state}
   end
 end

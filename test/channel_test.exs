@@ -20,6 +20,33 @@ defmodule MOMTest do
     MOM.Channel.stop(channel)
   end
 
+  test "Several channels at the same time" do
+    {:ok, channel_a} = MOM.Channel.start_link()
+    {:ok, channel_b} = MOM.Channel.start_link()
+
+    res = :ets.new(:res, [])
+    :ets.insert(res, {:res_a, 0})
+    :ets.insert(res, {:res_b, 0})
+
+    {:ok, _first_id} = MOM.Channel.subscribe(channel_a, fn _message ->
+      [res_a: n] = :ets.lookup(res, :res_a)
+      :ets.insert(res, {:res_a, n+1})
+    end)
+    {:ok, _first_id} = MOM.Channel.subscribe(channel_b, fn _message ->
+      [res_b: n] = :ets.lookup(res, :res_b)
+      :ets.insert(res, {:res_b, n+1})
+    end)
+    MOM.Channel.send(channel_a, %{})
+    MOM.Channel.send(channel_a, %{})
+    MOM.Channel.send(channel_a, %{})
+    MOM.Channel.send(channel_a, %{})
+
+    MOM.Channel.send(channel_b, %{})
+
+    assert :ets.lookup(res, :res_a) == [res_a: 4]
+    assert :ets.lookup(res, :res_b) == [res_b: 1]
+  end
+
 
   test "Multiple subscribers" do
     {:ok, channel} = MOM.Channel.start_link()
@@ -136,5 +163,24 @@ defmodule MOMTest do
     MOM.Channel.unsubscribe(channel, second_id)
     n = MOM.Channel.send(channel, %{})
     assert :ets.lookup(res, :res) == [res: 20]
+  end
+
+  test "Some subscriber is dead, remove it automatically (monitor)" do
+    res = :ets.new(:res, [])
+    :ets.insert(res, {:res, 0})
+
+    Task.async(fn ->
+      MOM.Channel.subscribe(:test_dead, fn message ->
+        flunk "I should be dead and not receive messages"
+      end)
+    end)
+    MOM.Channel.subscribe(:test_dead, fn message ->
+      [res: n] = :ets.lookup(res, :res)
+      :ets.insert(res, {:res, n+1})
+    end)
+    :timer.sleep(100)
+
+    MOM.Channel.send(:test_dead, %{})
+    assert :ets.lookup(res, :res) == [res: 1]
   end
 end
