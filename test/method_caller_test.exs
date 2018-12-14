@@ -7,10 +7,40 @@ defmodule Serverboards.MethodCallerTest do
 
 	alias MOM.RPC
 
-	test "Simple method caller" do
+  test "Simple method caller v2" do
+    {:ok, mc} = RPC.MethodCaller.start_link name: :test
+    {:ok, context} = RPC.Context.start_link
+    mypid = self()
+
+    RPC.MethodCaller.add_method mc, "echo", &(&1)
+    RPC.MethodCaller.add_method mc, "tac", fn str -> String.reverse str end
+    RPC.MethodCaller.add_method mc, "same_pid", fn [], context ->
+      self() == mypid
+    end, context: true
+
+    echo = RPC.MethodCaller.lookup(mc, "echo")
+    Logger.debug("echo #{inspect echo}")
+
+    dir = RPC.MethodCaller.dir(mc, context)
+    Logger.debug("All methods #{inspect dir}")
+
+
+    res = RPC.MethodCaller.call(mc, "echo", ["test"], context)
+    assert res == ["test"]
+
+    res = RPC.MethodCaller.call(mc, "tac", "tset", context)
+    assert res == "test"
+
+    res = RPC.MethodCaller.call(mc, "same_pid", [], context)
+    assert res
+  end
+
+	test "Simple nested method caller" do
     import MOM.RPC.MethodCaller
 
     {:ok, mc} = RPC.MethodCaller.start_link name: :test
+    {:ok, mc2} = RPC.MethodCaller.start_link name: :test2
+    {:ok, mc3} = RPC.MethodCaller.start_link name: :test3
     {:ok, context} = RPC.Context.start_link
 
     add_method mc, "echo", &(&1)
@@ -19,32 +49,22 @@ defmodule Serverboards.MethodCallerTest do
       context
     end, context: true
 
-    add_method_caller mc, fn msg ->
-      case msg.method do
-        "dir" ->
-          {:ok, ["echo_mc"]}
-        "echo_mc" ->
-          {:ok, msg.params}
-        _ -> :nok
-      end
-    end
+    add_method_caller mc, mc2
+    add_method_caller mc, mc3
 
-    add_method_caller mc, fn msg ->
-      case msg.method do
-        "dir" ->
-          {:ok, ["echo_mc2"]}
-        "echo_mc2" ->
-          {:ok, msg.params}
-        _ -> :nok
-      end
-    end
+    add_method mc2, "echo2", &(&1)
+    add_method mc3, "echo3", &(&1)
 
-    assert (call mc, "echo", "Hello world", context) == {:ok, "Hello world"}
-    assert (call mc, "tac", "Hello world", context) == {:ok, "dlrow olleH"}
-    assert (call mc, "get_context", [], context) == {:ok, context}
-    assert (call mc, "echo_mc", "Hello world", context) == {:ok, "Hello world"}
-    assert (call mc, "echo_mc2", "Hello world", context) == {:ok, "Hello world"}
-    assert (call mc, "echo_mc3", "Hello world", context) == {:error, :unknown_method}
+    dir = RPC.MethodCaller.dir(mc, context)
+    Logger.debug("All methods #{inspect dir}")
+
+
+    assert (call mc, "echo", "Hello world", context) == "Hello world"
+    assert (call mc, "tac", "Hello world", context) == "dlrow olleH"
+    assert (call mc, "get_context", [], context) == context
+    assert (call mc, "echo2", "Hello world", context) == "Hello world"
+    assert (call mc, "echo3", "Hello world", context) == "Hello world"
+    assert (call mc, "echo4", "Hello world", context) == {:error, :unknown_method}
   end
 
   test "Methods with errors" do
@@ -58,31 +78,10 @@ defmodule Serverboards.MethodCallerTest do
       context
     end, context: true
 
-    add_method_caller mc, fn msg ->
-      case msg.method do
-        "dir" ->
-          {:ok, ["echo_mc"]}
-        "echo_mc" ->
-          {:ok, msg.parms} # error on pourpose
-        _ -> :nok
-      end
-    end
-
-    add_method_caller mc, fn msg ->
-      case msg.method do
-        "dir" ->
-          {:ok, ["echo_mc2"]}
-        "echo_mc2" ->
-          {:ok, {msg.params, msg.context}}
-        _ -> :nok
-      end
-    end
-
-    assert (call mc, "echo", "Hello world", context) == {:ok, "Hello world"}
+    assert (call mc, "echo", "Hello world", context) == "Hello world"
     {:error, _} = (call mc, "tac", "Hello world", context)
-    assert (call mc, "get_context", [], context) == {:ok, context}
+    assert (call mc, "get_context", [], context) == context
     {:error, _} = (call mc, "echo_mc", "Hello world", context)
-    assert (call mc, "echo_mc2", "Hello world", context) == {:ok, {"Hello world", context}}
     assert (call mc, "echo_mc3", "Hello world", context) == {:error, :unknown_method}
   end
 
@@ -106,46 +105,37 @@ defmodule Serverboards.MethodCallerTest do
     add_method_caller mc2, mc22
     add_method_caller mc21, mc211
 
-    add_method mc, "mc", &(&1)
-    add_method mc1, "mc1", &(&1)
-    add_method mc11, "mc11", &(&1)
-    add_method mc12, "mc12", &(&1)
-    add_method mc2, "mc2", &(&1)
-    add_method mc21, "mc21", &(&1)
-    add_method mc22, "mc22", &(&1)
-    add_method mc22, "mc22_", &(&1)
-    add_method mc211, "mc211", &(&1)
+    add_method mc, "mc", &({:ok, &1})
+    add_method mc1, "mc1", &({:ok, &1})
+    add_method mc11, "mc11", &({:ok, &1})
+    add_method mc12, "mc12", &({:ok, &1})
+    add_method mc2, "mc2", &({:ok, &1})
+    add_method mc21, "mc21", &({:ok, &1})
+    add_method mc22, "mc22", &({:ok, &1})
+    add_method mc22, "mc22_", &({:ok, &1})
+    add_method mc211, "mc211", &({:ok, &1})
 
-    create_fn_method_caller = fn name ->
-      fn
-        %{method: ^name, params: [msg]} -> {:ok, "#{name}_#{msg}"}
-        %{method: n} ->
-          Logger.debug("NOK #{inspect name} != #{inspect n}")
-           :nok
+    create_rec_method_caller = fn name ->
+      {:ok, mc} = RPC.MethodCaller.start_link name: String.to_atom(name)
+      add_method mc, name, fn [msg] ->
+        {:ok, "#{name}_#{msg}"}
       end
+      mc
     end
 
     # Basic test, fn_method_caller works
-    assert (call create_fn_method_caller.("fc"), "fc", [8], context) == {:ok, "fc_8"}
 
-    add_method_caller mc, create_fn_method_caller.("fc")
-    add_method_caller mc, create_fn_method_caller.("fc_1")
-    add_method_caller mc1, create_fn_method_caller.("fc1")
-    add_method_caller mc2, create_fn_method_caller.("fc2")
-    add_method_caller mc21, create_fn_method_caller.("fc21")
-    add_method_caller mc21, create_fn_method_caller.("fc21_1")
-    add_method_caller mc211, create_fn_method_caller.("fc211")
-    add_method_caller mc, create_fn_method_caller.("fc_2")
+    add_method_caller mc, create_rec_method_caller.("fc")
+    add_method_caller mc, create_rec_method_caller.("fc_1")
+    add_method_caller mc1, create_rec_method_caller.("fc1")
+    add_method_caller mc2, create_rec_method_caller.("fc2")
+    add_method_caller mc21, create_rec_method_caller.("fc21")
+    add_method_caller mc21, create_rec_method_caller.("fc21_1")
+    add_method_caller mc211, create_rec_method_caller.("fc211")
+    add_method_caller mc, create_rec_method_caller.("fc_2")
 
     Logger.warn("Complex router")
     # simple call to complex router
-    assert (call mc, "fc", [8], context) == {:ok, "fc_8"}
-    Logger.warn("Ok 1")
-
-    assert (call mc, "fc_2", [8], context) == {:ok, "fc_2_8"}
-    Logger.warn("Ok 2")
-
-
     # and now call everything
     tini = :erlang.timestamp
     for i <- 1..1_000 do
@@ -240,35 +230,6 @@ defmodule Serverboards.MethodCallerTest do
     flunk 1
   end
 
-  # Checks a strange bug, explained at MethodCaller.cast_mc
-  test "Bug RPC mc :nok, :ok" do
-    {:ok, rpc} = RPC.start_link
-    {:ok, rpc_mc} = RPC.Endpoint.MethodCaller.start_link(rpc)
-    {:ok, caller} = RPC.Endpoint.Caller.start_link(rpc)
-    {:ok, mc} = RPC.MethodCaller.start_link
-    {:ok, mc2} = RPC.MethodCaller.start_link
-
-    RPC.Endpoint.MethodCaller.add_method_caller rpc_mc, mc
-    #RPC.add_method_caller rpc, mc2
-
-    RPC.MethodCaller.add_method mc, "foo", fn _ ->
-      {:error, :why_you_call_me}
-    end
-
-    RPC.MethodCaller.add_method_caller mc, fn _ ->
-      Logger.debug("Will not resolve it")
-      :timer.sleep(100) # slow process
-      :nok
-    end, name: :fail
-    RPC.MethodCaller.add_method_caller mc, mc2, name: :mc2
-    RPC.MethodCaller.add_method mc2, "test", fn _ ->
-      :timer.sleep(200) # slow process
-      {:ok, :ok}
-    end
-
-    assert (RPC.Endpoint.Caller.call caller, "test", []) == {:ok, :ok}
-  end
-
   # from http://stackoverflow.com/questions/29668635/how-can-we-easily-time-function-calls-in-elixir
   def measure(function) do
     function
@@ -278,40 +239,41 @@ defmodule Serverboards.MethodCallerTest do
   end
 
 
+  @tag timeout: 10_000
   test "Calls are not serialized" do
     {:ok, rpc} = RPC.start_link
-    {:ok, rpc_mc} = RPC.Endpoint.MethodCaller.start_link(rpc)
-    {:ok, caller} = RPC.Endpoint.Caller.start_link(rpc)
     {:ok, mc} = RPC.MethodCaller.start_link
-    RPC.Endpoint.MethodCaller.add_method_caller rpc_mc, mc
+    {:ok, context} = RPC.Context.start_link
 
     RPC.MethodCaller.add_method mc, "foo", fn _ ->
       Logger.debug("Wait 2s #{inspect self()}")
-      :timer.sleep(2_000)
+      :timer.sleep(1_000)
       {:ok, :ok}
     end
 
     # one call, sync, for control
-    t = measure(fn ->
-      assert (RPC.Endpoint.Caller.call caller, "foo", []) == {:ok, :ok}
+    Logger.debug("Do one for test")
+    {_, t} = benchmark(fn ->
+      assert (RPC.MethodCaller.call mc, "foo", [], context) == {:ok, :ok}
     end)
-    assert t > 2
-    assert t < 3
+    assert t > 1
+    assert t < 2
 
     Logger.debug("Do 100")
 
     # 10 real test
-    t = measure(fn ->
-      for _i <- 1..100 do
+    {_, t} = benchmark(fn ->
+      Logger.debug("Start measuring")
+      for i <- 1..100 do
         Task.async(fn ->
-          RPC.Endpoint.Caller.call(caller, "foo", [])
+          RPC.MethodCaller.call(mc, "foo", [], context)
         end)
       end |> Enum.map(fn t ->
         Task.await(t)
       end)
     end)
-    assert t > 2
-    assert t < 3
+    assert t > 1
+    assert t < 2
 
     Logger.debug("Done")
   end
