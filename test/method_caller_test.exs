@@ -1,9 +1,9 @@
 require Logger
 
 defmodule Serverboards.MethodCallerTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
   @moduletag :capture_log
-  doctest MOM.RPC.MethodCaller, import: true
+  # doctest MOM.RPC.MethodCaller, import: true
 
 	alias MOM.RPC
 
@@ -138,7 +138,8 @@ defmodule Serverboards.MethodCallerTest do
     # simple call to complex router
     # and now call everything
     tini = :erlang.timestamp
-    for i <- 1..1_000 do
+    ncalls = 10_000
+    for i <- 1..ncalls do
       assert (call mc, "mc", [i*1], context) == {:ok, [i*1]}
       assert (call mc, "mc1", [i*2], context) == {:ok, [i*2]}
       assert (call mc, "mc11", [i*3], context) == {:ok, [i*3]}
@@ -162,8 +163,9 @@ defmodule Serverboards.MethodCallerTest do
       assert (call mc, "fc_2", [i*10], context) == {:ok, "fc_2_#{i*10}"}
     end
     tend = :erlang.timestamp
-    tdiff=:timer.now_diff(tend, tini)
-    IO.puts("\n20_000 RPC calls in #{tdiff / 1000.0} ms, #{20_000 / (tdiff / 1_000_000)} call/s\n")
+    tdiff=:timer.now_diff(tend, tini) / 1_000_000
+    ncalls = ncalls * 20
+    IO.puts("\n20_000 RPC calls in #{tdiff}s, #{ncalls / tdiff} call/s (with asserts, recs calls and some calculations)\n")
   end
 
   def benchmark(func) do
@@ -197,7 +199,7 @@ defmodule Serverboards.MethodCallerTest do
         {:ok, Enum.count(bigdata)}
       end
 
-      ncalls = 5_000
+      ncalls = 500_000
       {_, tbig} = benchmark fn ->
         Enum.reduce(1..ncalls, 0, fn acc, n ->
           RPC.MethodCaller.call mc, "test", [bigdata], context
@@ -225,19 +227,7 @@ defmodule Serverboards.MethodCallerTest do
                  "as actually no data copy should occur, and so it should " <>
                  "take the same time do both tests")
     assert (tbig / tsmall) < 10, "Tbig sould not be more than 10 times slower than tsmall (Its #{tbig / tsmall})"
-
-
-    flunk 1
   end
-
-  # from http://stackoverflow.com/questions/29668635/how-can-we-easily-time-function-calls-in-elixir
-  def measure(function) do
-    function
-    |> :timer.tc
-    |> elem(0)
-    |> Kernel./(1_000)
-  end
-
 
   @tag timeout: 10_000
   test "Calls are not serialized" do
@@ -280,21 +270,19 @@ defmodule Serverboards.MethodCallerTest do
 
   test "Accepts calls longer than 5sec" do
     {:ok, rpc} = RPC.start_link
-    {:ok, rpc_mc} = RPC.Endpoint.MethodCaller.start_link(rpc)
-    {:ok, caller} = RPC.Endpoint.Caller.start_link(rpc)
     {:ok, mc} = RPC.MethodCaller.start_link
-    RPC.Endpoint.MethodCaller.add_method_caller rpc_mc, mc
+    {:ok, context} = RPC.Context.start_link
 
     RPC.MethodCaller.add_method mc, "foo", fn _ ->
       Logger.debug("Wait 10s, no timeout #{inspect self()}")
-      :timer.sleep(10_000)
+      :timer.sleep(6_000)
       {:ok, :ok}
     end
-    t = measure(fn ->
-      RPC.Endpoint.Caller.call(caller, "foo", [])
+    {_, t} = benchmark(fn ->
+      RPC.MethodCaller.call(mc, "foo", [], context)
     end)
-    assert t > 10
-    assert t < 12
+    assert t > 6
+    assert t < 7
   end
 
 end
