@@ -1,6 +1,8 @@
 require Logger
 
 defmodule MOM.Channel do
+  use GenServer
+
   @moduledoc ~S"""
   A channel of communication. Subscribers are functions that will be
   called when somebody sends a message.
@@ -114,22 +116,58 @@ defmodule MOM.Channel do
   @doc ~S"""
   Subscribes to a channel.
   """
-  def subscribe(channel, function, options \\ []) do
+  def subscribe(channel, function) do
+    subscribe(channel, function, [])
+  end
+  def subscribe(channel, function, options) when is_atom(channel) do
+    pid = get_or_create_channel(channel)
+    GenServer.call(pid, {:subscribe, function, options})
+  end
+  def subscribe(channel, function, options) do
     GenServer.call(channel, {:subscribe, function, options})
   end
   @doc "Unsubscribes to a channel"
+  def unsubscribe(channel, id) when is_atom(channel) do
+    pid = get_or_create_channel(channel)
+    GenServer.call(pid, {:unsubscribe, id})
+  end
   def unsubscribe(channel, id) do
     GenServer.call(channel, {:unsubscribe, id})
   end
 
-  def send(channel, message, options \\ [], timeout \\ 5_000) do
+  def send(channel, message), do: send(channel, message, [])
+  def send(channel, message, options) when is_atom(channel) do
+    pid = get_or_create_channel(channel)
+    send(pid, message, options)
+  end
+
+  def send(channel, message, options) do
     {:ok, {mod, fun, args}} = GenServer.call(channel, {:get_dispatcher})
     apply(mod, fun, args ++ [message, options])
   end
 
   def start_link(options \\ []) do
-    GenServer.start_link(__MODULE__, %{}, options)
+    init = if options[:dispatch] do
+      %{
+        dispatch: options[:dispatch]
+      }
+    else %{} end
+    GenServer.start_link(__MODULE__, init, options)
   end
+
+  def stop(pid, reason \\ :normal) do
+    GenServer.stop(pid, reason)
+  end
+
+  defp get_or_create_channel(channel) do
+    case Process.whereis(channel) do
+        pid when is_pid(pid) -> pid
+        other ->
+          {:ok, pid} = start_link(name: channel)
+          pid
+    end
+  end
+
 
   ## basic server impl
   def init(state) do
@@ -137,7 +175,7 @@ defmodule MOM.Channel do
 
     state = Map.merge(state, %{ maxid: 0, table: table})
 
-    state = if not :dispatch in state do
+    state = if Map.get(state, :dispatch) == nil do
       Map.put(state, :dispatch, {__MODULE__, :handle_dispatch, []})
     else state end
 
@@ -163,7 +201,6 @@ defmodule MOM.Channel do
       [] ->
         false
     end
-    Logger.debug("Ndeleted #{inspect deleted}")
 
     {:reply, deleted, state}
   end

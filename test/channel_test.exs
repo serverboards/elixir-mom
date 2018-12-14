@@ -1,7 +1,7 @@
 require Logger
 
 defmodule MOMTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
   @moduletag :capture_log
 
   test "Simple channel" do
@@ -17,6 +17,7 @@ defmodule MOMTest do
     MOM.Channel.send(channel, %{})
 
     assert :ets.lookup(is_called, :is_called) == [is_called: true]
+    MOM.Channel.stop(channel)
   end
 
 
@@ -54,6 +55,59 @@ defmodule MOMTest do
     # retry, not unsub
     resunsub = MOM.Channel.unsubscribe(channel, second_id)
     assert resunsub == false
+
+    MOM.Channel.stop(channel)
+  end
+
+  test "Channel by name, not created" do
+    res = :ets.new(:res, [])
+    :ets.insert(res, {:res, 0})
+
+    {:ok, _first_id} = MOM.Channel.subscribe(:test_channel_by_name, fn _message ->
+      [res: n] = :ets.lookup(res, :res)
+      :ets.insert(res, {:res, n+1})
+    end)
+    {:ok, second_id} = MOM.Channel.subscribe(:test_channel_by_name, fn _message ->
+      [res: n] = :ets.lookup(res, :res)
+      :ets.insert(res, {:res, n*2})
+    end)
+
+    n = MOM.Channel.send(:test_channel_by_name, %{})
+    assert :ets.lookup(res, :res) == [res: 2]
+    assert n == 2
+
+    MOM.Channel.unsubscribe(:test_channel_by_name, second_id)
+    n = MOM.Channel.send(:test_channel_by_name, %{})
+    assert :ets.lookup(res, :res) == [res: 3]
+    assert n == 1
+  end
+
+  test "Broadcast channel. It returns inmediately. Uses an internal task and will copy the message." do
+    {:ok, channel} = MOM.Channel.Broadcast.start_link()
+    selfpid = self()
+
+    res = :ets.new(:res, [:public])
+    :ets.insert(res, {:res, 0})
+
+    {:ok, _first_id} = MOM.Channel.subscribe(channel, fn _message ->
+      assert selfpid != self()
+      :timer.sleep(200)
+      [res: n] = :ets.lookup(res, :res)
+      :ets.insert(res, {:res, n+1})
+    end)
+    {:ok, second_id} = MOM.Channel.subscribe(channel, fn _message ->
+      assert selfpid != self()
+      :timer.sleep(200)
+      [res: n] = :ets.lookup(res, :res)
+      :ets.insert(res, {:res, n*2})
+    end)
+
+    n = MOM.Channel.send(channel, %{})
+    assert :ets.lookup(res, :res) == [res: 0]
+    :timer.sleep(500)
+    assert :ets.lookup(res, :res) == [res: 2]
+
+    MOM.Channel.stop(channel)
   end
 
 end
