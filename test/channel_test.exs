@@ -122,14 +122,14 @@ defmodule MOMTest do
       [res: n] = :ets.lookup(res, :res)
       :ets.insert(res, {:res, n+1})
     end)
-    {:ok, second_id} = MOM.Channel.subscribe(channel, fn _message ->
+    {:ok, _second_id} = MOM.Channel.subscribe(channel, fn _message ->
       assert selfpid != self()
       :timer.sleep(200)
       [res: n] = :ets.lookup(res, :res)
       :ets.insert(res, {:res, n*2})
     end)
 
-    n = MOM.Channel.send(channel, %{})
+    MOM.Channel.send(channel, %{})
     assert :ets.lookup(res, :res) == [res: 0]
     :timer.sleep(500)
     assert :ets.lookup(res, :res) == [res: 2]
@@ -153,15 +153,15 @@ defmodule MOMTest do
       :ets.insert(res, {:res, n * 20})
       :cont
     end)
-    n = MOM.Channel.send(channel, %{})
+    MOM.Channel.send(channel, %{})
     assert :ets.lookup(res, :res) == [res: 1]
 
     MOM.Channel.unsubscribe(channel, first_id)
-    n = MOM.Channel.send(channel, %{})
+    MOM.Channel.send(channel, %{})
     assert :ets.lookup(res, :res) == [res: 20]
 
     MOM.Channel.unsubscribe(channel, second_id)
-    n = MOM.Channel.send(channel, %{})
+    MOM.Channel.send(channel, %{})
     assert :ets.lookup(res, :res) == [res: 20]
   end
 
@@ -170,11 +170,11 @@ defmodule MOMTest do
     :ets.insert(res, {:res, 0})
 
     Task.async(fn ->
-      MOM.Channel.subscribe(:test_dead, fn message ->
+      MOM.Channel.subscribe(:test_dead, fn _message ->
         flunk "I should be dead and not receive messages"
       end)
     end)
-    MOM.Channel.subscribe(:test_dead, fn message ->
+    MOM.Channel.subscribe(:test_dead, fn _message ->
       [res: n] = :ets.lookup(res, :res)
       :ets.insert(res, {:res, n+1})
     end)
