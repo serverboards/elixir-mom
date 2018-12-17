@@ -285,7 +285,7 @@ defmodule MOM.RPC.MethodCaller do
   def handle_call({:dir, context}, _from, st) do
     local = st.methods
       |> Enum.flat_map(fn {name, {_, options}} ->
-          if check_guards(%MOM.RPC.Message{ method: name, context: context}, options, st.guards) do
+          if check_guards(%MOM.RPC.Request{ method: name, context: context}, options, st.guards) do
             [name]
           else
             []
@@ -313,8 +313,8 @@ defmodule MOM.RPC.MethodCaller do
   end
 
   # Checks all the guards, return false if any fails.
-  defp check_guards(%MOM.RPC.Message{}, _, []), do: true
-  defp check_guards(%MOM.RPC.Message{} = msg, options, [{gname, gf} | rest]) do
+  defp check_guards(%MOM.RPC.Request{}, _, []), do: true
+  defp check_guards(%MOM.RPC.Request{} = msg, options, [{gname, gf} | rest]) do
     try do
       if gf.(msg, options) do
         #Logger.debug("Guard #{inspect msg} #{inspect gname} allowed pass")

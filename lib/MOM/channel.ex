@@ -150,6 +150,13 @@ defmodule MOM.Channel do
     apply(mod, fun, args ++ [message, options])
   end
 
+  @doc ~S"""
+  Everything that arives to channel A, goes as well to channel B.
+  """
+  def connect(channel_a, channel_b) do
+    subscribe(channel_a, &MOM.Channel.send(channel_b, &1), monitor: channel_b)
+  end
+
   def start_link(options \\ []) do
     init = if options[:dispatch] do
       %{

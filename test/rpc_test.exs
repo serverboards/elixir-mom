@@ -1,3 +1,5 @@
+require Logger
+
 defmodule Serverboards.RPCTest do
   use ExUnit.Case
   @moduletag :capture_log
@@ -5,78 +7,93 @@ defmodule Serverboards.RPCTest do
   doctest MOM.RPC.Context, import: true
 
   alias MOM.RPC
-	alias MOM.RPC.Endpoint
+	alias MOM.RPC.EndPoint
+
+  test "New RPC" do
+    {:ok, mc_ep, mc} = EndPoint.MethodCaller.new()
+    {:ok, io_ep, caller} = EndPoint.Caller.new()
+
+    EndPoint.connect(mc_ep, io_ep)
+
+    RPC.MethodCaller.add_method(mc, "echo", &({:ok, &1}))
+
+    res = EndPoint.Caller.call(caller, "echo", "test")
+    Logger.debug("#{inspect res}")
+
+    flunk "stop"
+  end
+
 
 	test "Simple RPC use" do
 		{:ok, rpc} = RPC.start_link
-    {:ok, caller } = Endpoint.Caller.start_link(rpc)
-    {:ok, mc } = Endpoint.MethodCaller.start_link(rpc)
+    {:ok, caller } = EndPoint.Caller.start_link(rpc)
+    {:ok, mc } = EndPoint.MethodCaller.start_link(rpc)
 		RPC.tap( rpc )
 
-		Endpoint.MethodCaller.add_method mc, "echo", &(&1), async: true
+		EndPoint.MethodCaller.add_method mc, "echo", &(&1), async: true
 
 		# simple direct call
-		assert Endpoint.Caller.call(caller, "echo", "hello") == {:ok, "hello"}
+		assert EndPoint.Caller.call(caller, "echo", "hello") == {:ok, "hello"}
 
 		# simple call through chain
 		{:ok, worker} = RPC.start_link
-    {:ok, mcw} = Endpoint.MethodCaller.start_link(worker)
+    {:ok, mcw} = EndPoint.MethodCaller.start_link(worker)
 		RPC.tap( worker )
 
-		Endpoint.MethodCaller.add_method mcw, "ping", fn _ ->
+		EndPoint.MethodCaller.add_method mcw, "ping", fn _ ->
 			"pong"
 		end
 		RPC.chain rpc, worker
-		assert Endpoint.Caller.call(caller, "ping", []) == {:ok, "pong"}
+		assert EndPoint.Caller.call(caller, "ping", []) == {:ok, "pong"}
 
 		# call unknown
-		assert Endpoint.Caller.call(caller, "pong", nil) == {:error, :unknown_method}
+		assert EndPoint.Caller.call(caller, "pong", nil) == {:error, :unknown_method}
 
 		# chain a second worker
 		{:ok, worker2} = RPC.start_link
-    {:ok, mcw2} = Endpoint.MethodCaller.start_link(worker2)
+    {:ok, mcw2} = EndPoint.MethodCaller.start_link(worker2)
 		RPC.tap( worker2 )
-		Endpoint.MethodCaller.add_method mcw2, "pong", fn _ ->
+		EndPoint.MethodCaller.add_method mcw2, "pong", fn _ ->
 			"pong"
 		end
 
 		# still not chained, excpt
-		assert Endpoint.Caller.call(caller, "pong", nil) == {:error, :unknown_method}
+		assert EndPoint.Caller.call(caller, "pong", nil) == {:error, :unknown_method}
 
 		# now works
 		RPC.chain rpc, worker2
-		assert Endpoint.Caller.call(caller, "pong", nil) == {:ok, "pong"}
+		assert EndPoint.Caller.call(caller, "pong", nil) == {:ok, "pong"}
 	end
 
 
   test "RPC method with pattern matching" do
     {:ok, rpc} = RPC.start_link
-    {:ok, caller } = Endpoint.Caller.start_link(rpc)
-    {:ok, mc } = Endpoint.MethodCaller.start_link(rpc)
+    {:ok, caller } = EndPoint.Caller.start_link(rpc)
+    {:ok, mc } = EndPoint.MethodCaller.start_link(rpc)
 
     RPC.tap( rpc )
 
-    Endpoint.MethodCaller.add_method mc, "echo", fn
+    EndPoint.MethodCaller.add_method mc, "echo", fn
       [_] -> "one item"
       [] -> "empty"
       %{ type: _ } -> "map with type"
     end, async: true
 
-    assert Endpoint.Caller.call(caller, "echo", []) == {:ok, "empty"}
-    assert Endpoint.Caller.call(caller, "echo", [1]) == {:ok, "one item"}
-    assert Endpoint.Caller.call(caller, "echo", %{}) == {:error, :bad_arity}
-    assert Endpoint.Caller.call(caller, "echo", %{ type: :test}) == {:ok, "map with type"}
+    assert EndPoint.Caller.call(caller, "echo", []) == {:ok, "empty"}
+    assert EndPoint.Caller.call(caller, "echo", [1]) == {:ok, "one item"}
+    assert EndPoint.Caller.call(caller, "echo", %{}) == {:error, :bad_arity}
+    assert EndPoint.Caller.call(caller, "echo", %{ type: :test}) == {:ok, "map with type"}
   end
 
 
   test "dir aggregates from all method callers and even calls remotes" do
     {:ok, rpc} = RPC.start_link
-    {:ok, caller } = Endpoint.Caller.start_link(rpc)
-    {:ok, mc } = Endpoint.MethodCaller.start_link(rpc)
+    {:ok, caller } = EndPoint.Caller.start_link(rpc)
+    {:ok, mc } = EndPoint.MethodCaller.start_link(rpc)
 
     RPC.tap( rpc )
 
-    Endpoint.MethodCaller.add_method mc, "echo", fn
+    EndPoint.MethodCaller.add_method mc, "echo", fn
       [_] -> "one item"
       [] -> "empty"
       %{ type: _ } -> "map with type"
@@ -91,19 +108,19 @@ defmodule Serverboards.RPCTest do
     {:ok, mc3} = RPC.MethodCaller.start_link
     RPC.MethodCaller.add_method mc2, "echo3", &(&1)
 
-    Endpoint.MethodCaller.add_method_caller mc, mc1
-    Endpoint.MethodCaller.add_method_caller mc, mc2
+    EndPoint.MethodCaller.add_method_caller mc, mc1
+    EndPoint.MethodCaller.add_method_caller mc, mc2
     RPC.MethodCaller.add_method_caller mc2, mc3
 
-    assert Endpoint.Caller.call(caller, "dir", []) == {:ok, ~w(dir echo echo1 echo2 echo3)}
+    assert EndPoint.Caller.call(caller, "dir", []) == {:ok, ~w(dir echo echo1 echo2 echo3)}
   end
 
   test "RPC function method callers" do
     {:ok, rpc} = RPC.start_link
-    {:ok, caller } = Endpoint.Caller.start_link(rpc)
-    {:ok, mc } = Endpoint.MethodCaller.start_link(rpc)
+    {:ok, caller } = EndPoint.Caller.start_link(rpc)
+    {:ok, mc } = EndPoint.MethodCaller.start_link(rpc)
 
-    Endpoint.MethodCaller.add_method_caller mc, fn msg ->
+    EndPoint.MethodCaller.add_method_caller mc, fn msg ->
       case msg.method do
         "dir" ->
           {:ok, ["dir", "echo"]}
@@ -114,20 +131,20 @@ defmodule Serverboards.RPCTest do
       end
     end
 
-    assert Endpoint.Caller.call(caller, "dir", []) == {:ok, ~w(dir echo)}
-    assert Endpoint.Caller.call(caller, "echo", [1,2,3]) == {:ok, [1,2,3]}
+    assert EndPoint.Caller.call(caller, "dir", []) == {:ok, ~w(dir echo)}
+    assert EndPoint.Caller.call(caller, "echo", [1,2,3]) == {:ok, [1,2,3]}
   end
 
   test "Long running RPC call" do
     {:ok, rpc} = RPC.start_link
-    {:ok, caller } = Endpoint.Caller.start_link(rpc)
-    {:ok, mc } = Endpoint.MethodCaller.start_link(rpc)
+    {:ok, caller } = EndPoint.Caller.start_link(rpc)
+    {:ok, mc } = EndPoint.MethodCaller.start_link(rpc)
 
-    Endpoint.MethodCaller.add_method mc, "wait", fn [] ->
+    EndPoint.MethodCaller.add_method mc, "wait", fn [] ->
       Process.sleep(10000)
       :ok
     end
 
-    assert Endpoint.Caller.call(caller, "wait", []) == {:ok, :ok}
+    assert EndPoint.Caller.call(caller, "wait", []) == {:ok, :ok}
   end
 end

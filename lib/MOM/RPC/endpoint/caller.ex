@@ -1,20 +1,36 @@
 require Logger
 
-defmodule MOM.RPC.Endpoint.Caller do
+defmodule MOM.RPC.EndPoint.Caller do
+  @moduledoc ~S"""
+  A method caller to be able to call from code to other endpoints.
+
+  This method caller can not receive requests. It avoids copy of messages,
+  forcing in some cases two calls the the genserver (on call: getid and wait for
+  id. This wait is answered actually by the emitter directly, with another extra
+  indirection to get to who to answer).
+
+  """
   use GenServer
 
-  def start_link(rpc_out, options \\ []) do
-    {:ok, pid } = GenServer.start_link __MODULE__, rpc_out, options
+  def new(options \\ []) do
+    endpoint = MOM.RPC.EndPoint.new()
 
-    MOM.Channel.subscribe( rpc_out.reply, fn msg ->
-      if msg.error do
-        error(pid, msg.id, msg.error)
-      else
-        reply(pid, msg.id, msg.payload)
-      end
-    end)
+    {:ok, pid} = GenServer.start_link(__MODULE__, endpoint.out, options)
 
-    {:ok, %{ pid: pid, rpc_out: rpc_out }}
+    MOM.RPC.EndPoint.update_in(endpoint, fn
+      %MOM.RPC.Request{id: id} when not is_nil(id) ->
+        MOM.Channel.send(endpoint.out, %{id: id, error: :unknown_method})
+      %MOM.RPC.Request{} ->
+        :ignore
+      %MOM.RPC.Response{id: id, result: result} ->
+        from = GenServer.call(pid, {:get_from, id})
+        GenServer.reply(from, {:ok, result})
+      %MOM.RPC.Response.Error{id: id, error: error} ->
+        from = GenServer.call(pid, {:get_from, id})
+        GenServer.reply(from, {:error, error})
+      end, monitor: pid)
+
+    {:ok, endpoint, pid}
   end
 
   def stop(caller, reason) do
@@ -22,69 +38,46 @@ defmodule MOM.RPC.Endpoint.Caller do
   end
 
   def call(client, method, params, timeout \\ 60_000) do
-    GenServer.call(client.pid, {:call, method, params}, timeout)
+    {id, out} = GenServer.call(client, {:get_next_id_and_out})
+    MOM.Channel.send(out, %MOM.RPC.Request{ id: id, method: method, params: params, context: nil})
+    GenServer.call(client, {:wait_for, id}, timeout)
   end
 
   def event(client, method, params) do
-    MOM.Channel.send(client.rpc_out.request, %MOM.Message{ payload:
-      %MOM.RPC.Message{ method: method, params: params}
-      })
-  end
-
-  def reply(client, id, res) do
-    GenServer.cast(client, {:reply, id, res})
-  end
-  def error(client, id, error) do
-    GenServer.cast(client, {:error, id, error})
+    out = GenServer.call(client, {:get_out})
+    MOM.Channel.send(out, %MOM.RPC.Request{
+      id: nil, method: method, params: params, context: nil
+    })
   end
 
   # server impl
-  def init(rpc_out) do
+  def init(out) do
     {:ok, %{
-      rpc_out: rpc_out,
+      out: out,
       maxid: 1,
-      reply: %{}
+      reply_to: %{}
     }}
   end
 
-  def handle_call({:call, method, params}, from, status) do
-    id = status.maxid
-    pid = self()
-    Task.start(fn ->
-      ok = MOM.Channel.send(status.rpc_out.request, %MOM.Message{ payload:
-        %MOM.RPC.Message{ method: method, params: params}, id: id
-        } )
-      case ok do
-        :empty ->
-          error(pid, id, :unknown_method)
-        :nok ->
-          error(pid, id, :unknown_method)
-        :ok ->
-          :ok # do nothing, wait for real reply
-      end
-    end)
-    {:noreply, %{
-      status |
-      reply: Map.put(status.reply, id, from),
-      maxid: status.maxid+1
-      }
-    }
+  def handle_call({:get_next_id_and_out}, _from, status) do
+    {:reply, {status.maxid, status.out}, %{ status |
+      maxid: status.maxid + 1,
+    }}
+  end
+  def handle_call({:get_out}, _from, status) do
+    {:reply, status.out, status}
   end
 
-  def handle_cast({:reply, id, res}, status) do
-    GenServer.reply( status.reply[id], {:ok, res} )
-
+  def handle_call({:wait_for, id}, from, status) do
     {:noreply, %{ status |
-      reply: Map.drop(status.reply, [id])
-      }
-    }
+      reply_to: Map.put(status.reply_to, id, from)
+    }}
   end
-  def handle_cast({:error, id, res}, status) do
-    GenServer.reply( status.reply[id], {:error, res} )
+  def handle_call({:get_from, id}, _from, status) do
+    {from, reply_to} = Map.pop(status.reply_to, id)
 
-    {:noreply, %{ status |
-      reply: Map.drop(status.reply, [id])
-      }
-    }
+    {:reply, from, %{ status |
+      reply_to: reply_to
+    }}
   end
 end
