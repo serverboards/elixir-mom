@@ -130,7 +130,6 @@ defmodule Serverboards.RPCTest do
     {endpoint_a, endpoint_b} = EndPoint.pair()
     {:ok, caller } = Caller.start_link(endpoint_a)
     {:ok, mc } = MethodCaller.start_link(endpoint_b)
-    context = %{}
 
     MethodCaller.add_method mc, "foo", fn _ ->
       Logger.debug("Wait 2s #{inspect self()}")
@@ -151,7 +150,7 @@ defmodule Serverboards.RPCTest do
     # 10 real test
     {_, t} = MOM.Test.benchmark(fn ->
       Logger.debug("Start measuring")
-      for i <- 1..100 do
+      for _i <- 1..100 do
         Task.async(fn ->
           Caller.call(caller, "foo", [])
         end)

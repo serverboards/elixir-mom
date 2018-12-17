@@ -14,7 +14,7 @@ defmodule Serverboards.MethodCallerTest do
 
     RPC.MethodCaller.add_method mc, "echo", &(&1)
     RPC.MethodCaller.add_method mc, "tac", fn str -> String.reverse str end
-    RPC.MethodCaller.add_method mc, "same_pid", fn [], context ->
+    RPC.MethodCaller.add_method mc, "same_pid", fn [], _context ->
       self() == mypid
     end, context: true
 
@@ -170,10 +170,8 @@ defmodule Serverboards.MethodCallerTest do
 
   @tag timeout: 90_000
   test "Basic method caller benchmark" do
-    tini0 = :erlang.timestamp
     Logger.debug("Mem total: #{inspect :erlang.memory()[:total], pretty: true}")
 
-    import MOM.RPC.MethodCaller
     context = %{}
     {:ok, mc} = RPC.MethodCaller.start_link name: :"mc"
 
@@ -191,7 +189,7 @@ defmodule Serverboards.MethodCallerTest do
 
       ncalls = 500_000
       {_, tbig} = MOM.Test.benchmark fn ->
-        Enum.reduce(1..ncalls, 0, fn acc, n ->
+        Enum.reduce(1..ncalls, 0, fn _acc, _n ->
           RPC.MethodCaller.call mc, "test", [bigdata], context
         end)
       end
@@ -201,7 +199,7 @@ defmodule Serverboards.MethodCallerTest do
 
       {_, tsmall} = MOM.Test.benchmark fn ->
         smalldata = hd bigdata
-        Enum.reduce(1..ncalls, 0, fn acc, n ->
+        Enum.reduce(1..ncalls, 0, fn _acc, _n ->
           RPC.MethodCaller.call mc, "test", smalldata, context
         end)
       end

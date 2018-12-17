@@ -258,6 +258,10 @@ defmodule MOM.Channel do
       error ->
         Logger.error("Error sending message id #{inspect Map.get(message, :id)}, error: #{inspect error}.\n#{Exception.format_stacktrace(System.stacktrace())}")
         {:error, error}
+    catch
+      :exit, _ ->
+        Logger.error("Error sending message id #{inspect Map.get(message, :id)}, error: :exit")
+        {:error, :exit}
     end
   end
 
