@@ -31,8 +31,6 @@ defmodule MOM.RPC.MethodCaller do
   """
   use GenServer
 
-  alias MOM.RPC
-
   def start_link(options \\ []) do
     GenServer.start_link(__MODULE__, [name: Keyword.get(options, :name, nil)], options)
   end

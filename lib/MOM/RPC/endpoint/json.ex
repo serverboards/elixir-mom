@@ -1,7 +1,6 @@
 require Logger
 
 defmodule MOM.RPC.EndPoint.JSON do
-  alias MOM.Channel
   use GenServer
 
 
@@ -54,9 +53,9 @@ defmodule MOM.RPC.EndPoint.JSON do
 
           # this are answers from JSON side to the other side
           {:ok, %{ "result" => result, "id" => id}} ->
-            MOM.Channel.send(out, %MOM.RPC.Response{result: result, id: nil})
+            MOM.Channel.send(out, %MOM.RPC.Response{result: result, id: id})
           {:ok, %{ "error" => error, "id" => id}} ->
-            MOM.Channel.send(out, %MOM.RPC.Response.Error{error: error, id: nil})
+            MOM.Channel.send(out, %MOM.RPC.Response.Error{error: error, id: id})
           # no idea, should close.
           _ ->
             {:error, :bad_protocol}

@@ -212,7 +212,7 @@ defmodule MOM.Channel do
         ref
     end
 
-    subscriptions = :ets.insert(state.table, {maxid, {func, options, ref}})
+    :ets.insert(state.table, {maxid, {func, options, ref}})
 
     # Logger.debug("Subscribed #{inspect self()} #{inspect state.table}: #{inspect :ets.tab2list(state.table)} | #{inspect options[:monitor]}")
 
@@ -242,10 +242,10 @@ defmodule MOM.Channel do
   end
 
 
-  def handle_dispatch(table, message, options) do
+  def handle_dispatch(table, message, _options) do
     # Logger.debug("Handle dispatch simple #{inspect self()} #{inspect message}")
     # this code is called back at process caller of send
-    :ets.foldl(fn {_, {func, opts, _ref}}, acc ->
+    :ets.foldl(fn {_, {func, _opts, _ref}}, acc ->
       dispatch_one(func, message)
       acc + 1
     end, 0, table)

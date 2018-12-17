@@ -116,7 +116,7 @@ defmodule MOM.RPC.EndPoint do
   end
 
 
-  def unknown_method(message, options) do
+  def unknown_method(message, _options) do
     # Logger.debug("Unknown method: #{inspect message} #{inspect options}")
     if message.id != nil do
       MOM.Channel.send(message.reply, %MOM.RPC.Response.Error{ error: :unknown_method, id: message.id })

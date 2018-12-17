@@ -82,7 +82,7 @@ defmodule MOM.Channel.PointToPoint do
   def handle_dispatch(ptp_options, table, message, options) do
     # this code is called back at process caller of send
     res = :ets.foldl(fn
-      {_id, {func, opts, _ref}}, :cont ->
+      {_id, {func, _opts, _ref}}, :cont ->
         MOM.Channel.dispatch_one(func, message)
       _, :stop ->
         :stop

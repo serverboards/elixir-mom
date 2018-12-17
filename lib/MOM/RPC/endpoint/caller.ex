@@ -84,7 +84,7 @@ defmodule MOM.RPC.EndPoint.Caller do
   def handle_call({:get_answer, id}, from, status) do
     # Logger.debug("Wait for #{inspect id}")
     case Map.pop(status.answers, id) do
-      {nil, answers} ->
+      {nil, _answers} ->
         # Logger.debug("Answer not ready, wait.")
         {:noreply, %{ status |
           wait_answer: Map.put(status.wait_answer, id, from)

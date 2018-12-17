@@ -58,7 +58,7 @@ defmodule MOM.Channel.Broadcast do
   """
 
   def start_link(options \\ []) do
-    MOM.Channel.start_link(dispatch: {__MODULE__, :handle_dispatch, []})
+    MOM.Channel.start_link(dispatch: {__MODULE__, :handle_dispatch, options})
   end
 
   def handle_dispatch(table, message, options) do

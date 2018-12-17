@@ -1,9 +1,8 @@
 require Logger
 
 defmodule Serverboards.RPCTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
   @moduletag :capture_log
-  doctest MOM.RPC.Context, import: true
 
   alias MOM.RPC
   alias MOM.RPC.EndPoint
