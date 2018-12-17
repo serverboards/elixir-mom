@@ -30,6 +30,11 @@ defmodule MOM.RPC.EndPoint do
     }
   end
 
+  def stop(ep) do
+    MOM.Channel.stop(ep.in)
+    MOM.Channel.stop(ep.out)
+  end
+
   @doc ~S"""
     Creates a pair of connected endpoints.
 
@@ -51,12 +56,12 @@ defmodule MOM.RPC.EndPoint do
 
     {
       %MOM.RPC.EndPoint{
-        out: outA,
-        in: outB,
-      },
-      %MOM.RPC.EndPoint{
         out: outB,
         in: outA,
+      },
+      %MOM.RPC.EndPoint{
+        out: outA,
+        in: outB,
       }
     }
   end
@@ -79,6 +84,8 @@ defmodule MOM.RPC.EndPoint do
         cont_or_stop = case mcres do
           {:error, :unknown_method} ->
             :cont
+          :noreply ->
+            :stop
           _ ->
             if msg.id do
               msgout = case mcres do

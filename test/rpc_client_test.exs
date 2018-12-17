@@ -2,98 +2,115 @@ require Logger
 defmodule Serverboards.RPC.ClientTest do
   use ExUnit.Case
   @moduletag :capture_log
-  doctest MOM.RPC.Client, import: true
-
-  alias MOM.RPC.Client
-
-  test "Create and stop a client" do
-    {:ok, client} = Client.start_link writef: :context
-
-    Client.stop client
-
-    # There is no easy test, its
-    # a set of processes. Maybe FIXME as one dummy process parent of all the others
-    #assert (Process.alive? client) == false
-  end
 
   test "Bad protocol" do
-    {:ok, client} = Client.start_link writef: :context
+    {ep1, ep2} = MOM.RPC.EndPoint.pair()
+    {:ok, json} = MOM.RPC.EndPoint.JSON.start_link(ep1, nil)
+    {:ok, _mc} = MOM.RPC.EndPoint.MethodCaller.start_link(ep2)
 
-    {:error, :bad_protocol} = Client.parse_line client, "bad protocol"
+    {:error, :bad_protocol} = MOM.RPC.EndPoint.JSON.parse_line json, "bad protocol"
 
     # Now a good call
-    {:ok, mc} = Poison.encode(%{method: "dir", params: [], id: 1})
-    :ok = Client.parse_line client, mc
+    {:ok, mcjson} = Poison.encode(%{method: "dir", params: [], id: 1})
+    :ok = MOM.RPC.EndPoint.JSON.parse_line json, mcjson
 
-    Client.stop(client)
+    MOM.RPC.EndPoint.stop(ep1)
   end
 
   test "Good protocol" do
-    {:ok, client} = Client.start_link writef: :context
+    {:ok, context} = Agent.start_link(fn -> nil end)
+    {ep1, ep2} = MOM.RPC.EndPoint.pair()
+    {:ok, json} = MOM.RPC.EndPoint.JSON.start_link(ep1, fn line ->
+      Agent.update(context, fn _ -> line end)
+    end)
+    {:ok, _mcall} = MOM.RPC.EndPoint.MethodCaller.start_link(ep2)
+    MOM.RPC.EndPoint.tap(ep1)
+
 
     {:ok, mc} = Poison.encode(%{method: "dir", params: [], id: 1})
-    Client.parse_line client, mc
+    MOM.RPC.EndPoint.JSON.parse_line json, mc, context
 
     :timer.sleep(200)
 
-    {:ok, json} = Poison.decode( Client.get client, :last_line )
-    assert Map.get(json,"result") == ~w(dir ping version)
+    {:ok, json} = Poison.decode( Agent.get(context, &(&1)) )
+    Logger.debug(inspect json)
+    assert Map.get(json,"result") == ~w(dir)
 
-    Client.stop(client)
+    MOM.RPC.EndPoint.stop(ep1)
+    Agent.stop(context)
   end
 
   test "Call to client" do
-    {:ok, client} = Client.start_link writef: :context
+    {:ok, context} = Agent.start_link(fn -> nil end)
+    {:ok, called} = Agent.start_link(fn -> false end)
+    {ep1, ep2} = MOM.RPC.EndPoint.pair()
+    MOM.RPC.EndPoint.tap(ep1)
+    {:ok, json} = MOM.RPC.EndPoint.JSON.start_link(ep1, fn line ->
+      Logger.debug("Read>> #{line}")
+      Agent.update(context, fn _ -> line end)
+    end)
+    {:ok, caller} = MOM.RPC.EndPoint.Caller.start_link(ep2)
 
     Task.start(fn ->
       # waits to get answer, to set the called
-      res = MOM.RPC.Client.call client, "dir", []
+      res = MOM.RPC.EndPoint.Caller.call(caller, "dir", [])
       assert res == {:ok, []}
-      Client.set client, :called, true
+      Agent.update(called, fn _ -> true end)
     end)
     :timer.sleep(20) #20 ms
 
     # manual reply
-    assert (Client.get client, :called, false) == false
-    Logger.debug("Last line #{inspect(Client.get client, :last_line)}")
-    {:ok, js} = Poison.decode(Client.get client, :last_line)
-    assert Map.get(js,"method") == "dir"
+    assert Agent.get(called, &(&1)) == false
+    last_line = Agent.get(context, &(&1))
+    Logger.debug("Last line #{inspect last_line}")
+    {:ok, js} = Poison.decode(last_line)
+    assert Map.get(js, "method") == "dir"
     {:ok, res} = Poison.encode(%{ id: 1, result: []})
-    Logger.debug("Writing result #{res}")
-    assert (Client.parse_line client, res) == :ok
+    Logger.debug("Writing>> #{res}")
+    assert (MOM.RPC.EndPoint.JSON.parse_line json, res) == :ok
 
     :timer.sleep(20) # 20ms
 
-    assert (Client.get client, :called) == true
+    assert Agent.get(called, &(&1)) == true
 
-
-    Client.event client, "auth", ["basic"]
+    MOM.RPC.EndPoint.Caller.event caller, "auth", ["basic"]
     :timer.sleep(1)
-    {:ok, js} = Poison.decode(Client.get client, :last_line)
+    last_line = Agent.get(context, &(&1))
+    {:ok, js} = Poison.decode(last_line)
     assert Map.get(js,"method") == "auth"
     assert Map.get(js,"params") == ["basic"]
     assert Map.get(js,"id") == nil
 
-    Client.stop(client)
+    MOM.RPC.EndPoint.stop(ep1)
+    MOM.RPC.EndPoint.JSON.stop(json)
+    MOM.RPC.EndPoint.Caller.stop(caller)
   end
 
   test "Call from client" do
-    {:ok, client} = Client.start_link writef: :context
+    {:ok, context} = Agent.start_link(fn -> nil end)
+    {ep1, ep2} = MOM.RPC.EndPoint.pair()
+    {:ok, json} = MOM.RPC.EndPoint.JSON.start_link(ep1, fn line ->
+      Agent.update(context, fn _ -> line end)
+    end)
+    {:ok, _caller} = MOM.RPC.EndPoint.Caller.start_link(ep2)
+    MOM.RPC.EndPoint.tap(ep1)
 
     # events, have no reply never
-    {:ok, json} = Poison.encode(%{ method: "ready", params: [] })
-    assert (Client.parse_line client, json) == :ok
-    :timer.sleep(20)
-    assert (Client.get client, :last_line) == nil
+    {:ok, jsline} = Poison.encode(%{ method: "ready", params: [] })
+    assert (MOM.RPC.EndPoint.JSON.parse_line json, jsline) == :ok
+    :timer.sleep(200)
+    last_line = Agent.get(context, &(&1))
+    assert last_line == nil
 
     # method calls, have it, for example, unknown
-    {:ok, json} = Poison.encode(%{ method: "ready", params: [], id: 1})
-    assert (Client.parse_line client, json) == :ok
+    {:ok, jsline} = Poison.encode(%{ method: "ready", params: [], id: 1})
+    assert (MOM.RPC.EndPoint.JSON.parse_line json, jsline) == :ok
     :timer.sleep(200)
-    {:ok, js} = Poison.decode(Client.get client, :last_line)
+    last_line = Agent.get(context, &(&1))
+    {:ok, js} = Poison.decode(last_line)
     assert Map.get(js,"error") == "unknown_method"
 
-    Client.stop(client)
+    MOM.RPC.EndPoint.stop(ep1)
   end
 
   test "As method caller" do

@@ -1,6 +1,6 @@
 require Logger
 
-defmodule MOMTest do
+defmodule MOM.ChannelTest do
   use ExUnit.Case, async: true
   @moduletag :capture_log
   import ExUnit.CaptureLog
@@ -192,7 +192,7 @@ defmodule MOMTest do
       raise "Error at big fail test"
     end)
     MOM.Channel.subscribe(:big_fail_test, fn _msg ->
-      pid = Task.async(fn -> end)
+      pid = Task.async(fn -> nil end)
       :timer.sleep(100)
       send(pid, {:message_to_dead_process})
     end)

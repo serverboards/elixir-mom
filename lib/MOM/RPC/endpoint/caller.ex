@@ -42,8 +42,8 @@ defmodule MOM.RPC.EndPoint.Caller do
     {:ok, pid}
   end
 
-  def stop(caller, reason) do
-    GenServer.stop(caller.pid, reason)
+  def stop(caller, reason \\ :normal) do
+    GenServer.stop(caller, reason)
   end
 
   def call(client, method, params, timeout \\ 60_000) do
