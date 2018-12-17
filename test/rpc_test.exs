@@ -39,7 +39,7 @@ defmodule Serverboards.RPCTest do
     Logger.debug("Echo res: #{inspect res}")
     assert res == {:ok, "test"}
 
-    # assert Caller.call(caller, "dir", []) == {:ok, ["dir", "echo"]}
+    assert Caller.call(caller, "dir", []) == {:ok, ["dir", "echo"]}
   end
 
 

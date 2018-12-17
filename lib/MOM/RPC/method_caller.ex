@@ -293,7 +293,7 @@ defmodule MOM.RPC.MethodCaller do
         end)
     other = Enum.flat_map( st.mc, &(dir(&1, context)) )
     res = Enum.uniq Enum.sort( local ++ other )
-    {:reply, res, st}
+    {:reply, {:ok, res}, st}
   end
 
   def handle_call({:add_method, name, f, options}, _from, status) do
