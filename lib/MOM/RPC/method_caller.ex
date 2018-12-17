@@ -242,6 +242,8 @@ defmodule MOM.RPC.MethodCaller do
         func.(args)
       end
     rescue
+      _ in FunctionClauseError ->
+        {:error, :bad_arity}
       error ->
         {:error, error}
     end
@@ -291,7 +293,10 @@ defmodule MOM.RPC.MethodCaller do
             []
           end
         end)
-    other = Enum.flat_map( st.mc, &(dir(&1, context)) )
+    other = Enum.flat_map( st.mc, fn mc ->
+      {:ok, res} = dir(mc, context)
+      res
+    end)
     res = Enum.uniq Enum.sort( local ++ other )
     {:reply, {:ok, res}, st}
   end

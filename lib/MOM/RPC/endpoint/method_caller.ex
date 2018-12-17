@@ -13,4 +13,11 @@ defmodule MOM.RPC.EndPoint.MethodCaller do
 
     {:ok, mc}
   end
+
+  def add_method(mc, method, func, options \\ []) do
+    MOM.RPC.MethodCaller.add_method(mc, method, func, options)
+  end
+  def add_method_caller(mc, method, mc, options \\ []) do
+    MOM.RPC.MethodCaller.add_method_caller(mc, method, mc, options)
+  end
 end

@@ -92,6 +92,12 @@ defmodule MOM.RPC.EndPoint do
                     id: msg.id,
                     result: result,
                   }
+                # Simple case answer. It is converted to {:ok, res}
+                other ->
+                  %MOM.RPC.Response{
+                    id: msg.id,
+                    result: other,
+                  }
               end
               # Logger.debug("Send response #{inspect msgout}")
               MOM.Channel.send(endpoint.out, msgout)
@@ -115,5 +121,10 @@ defmodule MOM.RPC.EndPoint do
     if message.id != nil do
       MOM.Channel.send(message.reply, %MOM.RPC.Response.Error{ error: :unknown_method, id: message.id })
     end
+  end
+
+  def tap(endpoint) do
+    MOM.Tap.tap(endpoint.in, "A -> B")
+    MOM.Tap.tap(endpoint.out, "B -> A")
   end
 end

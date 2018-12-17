@@ -17,8 +17,8 @@ defmodule MOM.Tap do
   def tap(channel, id \\ "#") do
     MOM.Channel.subscribe(channel, fn msg ->
       Logger.info("Tap[#{id}]: #{inspect msg}")
-      :nok # at P2P channels, this does not consume message
-    end, front: true)
+      :cont # at P2P channels, this does not consume message
+    end)
   end
 
   def untap(channel, tap_id) do
