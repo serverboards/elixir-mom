@@ -9,6 +9,7 @@ defmodule Serverboards.RPCTest do
   alias MOM.RPC
 	alias MOM.RPC.EndPoint
 
+  @tag timeout: 1_000
   test "New RPC" do
     {:ok, mc_ep, mc} = EndPoint.MethodCaller.new()
     {:ok, io_ep, caller} = EndPoint.Caller.new()
@@ -18,9 +19,14 @@ defmodule Serverboards.RPCTest do
     RPC.MethodCaller.add_method(mc, "echo", &({:ok, &1}))
 
     res = EndPoint.Caller.call(caller, "echo", "test")
-    Logger.debug("#{inspect res}")
+    Logger.debug("Echo res: #{inspect res}")
+    assert res == {:ok, "test"}
 
-    flunk "stop"
+    # res = EndPoint.Caller.call(caller, "dir", [])
+    # assert res == {:ok, ["dir", "echo"]}
+    #
+    # res = EndPoint.Caller.call(caller, "noecho", [])
+    # assert res == {:ok, ["dir", "echo"]}
   end
 
 

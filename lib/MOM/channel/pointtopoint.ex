@@ -75,6 +75,7 @@ defmodule MOM.Channel.PointToPoint do
   end
 
   def handle_dispatch(table, message, options) do
+    # Logger.debug("#{inspect self()}: Handle dispatch ptp #{inspect table} #{inspect message} | #{inspect :ets.tab2list(table)}")
     # this code is called back at process caller of send
     :ets.foldl(fn
       {_id, {func, opts, _ref}}, :cont ->

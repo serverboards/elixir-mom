@@ -124,10 +124,8 @@ defmodule MOM.Channel do
     subscribe(pid, function, options)
   end
   def subscribe(channel, function, options) do
-    options = if options[:monitor] == nil do
-      [{:monitor, self()} | options]
-    end
-
+    # default monitor value.
+    options = options ++ [{:monitor, self()}]
     GenServer.call(channel, {:subscribe, function, options})
   end
   @doc "Unsubscribes to a channel"
@@ -148,13 +146,19 @@ defmodule MOM.Channel do
   def send(channel, message, options) do
     {:ok, {mod, fun, args}} = GenServer.call(channel, {:get_dispatcher})
     apply(mod, fun, args ++ [message, options])
+    # Logger.debug("Sent to #{inspect {mod, fun, args}} | #{inspect message}")
   end
 
   @doc ~S"""
   Everything that arives to channel A, goes as well to channel B.
   """
   def connect(channel_a, channel_b) do
-    subscribe(channel_a, &MOM.Channel.send(channel_b, &1), monitor: channel_b)
+    # Logger.debug("Connect #{inspect {channel_a, channel_b}}")
+    subscribe(channel_a, fn msg ->
+      # Logger.debug("Pipe message #{inspect msg}")
+      MOM.Channel.send(channel_b, msg)
+      :stop
+    end, monitor: channel_b)
   end
 
   def start_link(options \\ []) do
@@ -200,6 +204,8 @@ defmodule MOM.Channel do
     maxid = state.maxid
 
     ref = case options[:monitor] do
+      nil ->
+        nil
       pid ->
         ref = Process.monitor(pid)
         :ets.insert(state.monitored, {ref, maxid})
@@ -207,6 +213,8 @@ defmodule MOM.Channel do
     end
 
     subscriptions = :ets.insert(state.table, {maxid, {func, options, ref}})
+
+    # Logger.debug("Subscribed #{inspect self()} #{inspect state.table}: #{inspect :ets.tab2list(state.table)} | #{inspect options[:monitor]}")
 
     state = %{ state
       | maxid: state.maxid + 1
@@ -235,6 +243,7 @@ defmodule MOM.Channel do
 
 
   def handle_dispatch(table, message, options) do
+    # Logger.debug("Handle dispatch simple #{inspect self()} #{inspect message}")
     # this code is called back at process caller of send
     :ets.foldl(fn {_, {func, opts, _ref}}, acc ->
       dispatch_one(func, message)
@@ -247,7 +256,8 @@ defmodule MOM.Channel do
       func.(message)
     rescue
       error ->
-        Logger.error("Error sending message id #{inspect message[:id]}, error: #{inspect error}.")
+        Logger.error("Error sending message id #{inspect message.id}, error: #{inspect error}.\n#{Exception.format_stacktrace(System.stacktrace())}")
+        {:error, error}
     end
   end
 
@@ -255,6 +265,7 @@ defmodule MOM.Channel do
     [{^ref, id}] = :ets.lookup(state.monitored, ref)
     {:reply, true, state} = handle_call({:unsubscribe, id}, nil, state)
 
+    # Logger.debug("Process down #{inspect _pid, _reason} at #{inspect self()}")
     {:noreply, state}
   end
 end

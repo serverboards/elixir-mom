@@ -4,10 +4,19 @@ defmodule MOM.RPC.EndPoint.Caller do
   @moduledoc ~S"""
   A method caller to be able to call from code to other endpoints.
 
-  This method caller can not receive requests. It avoids copy of messages,
-  forcing in some cases two calls the the genserver (on call: getid and wait for
-  id. This wait is answered actually by the emitter directly, with another extra
-  indirection to get to who to answer).
+  This method caller can not receive requests.
+
+  Ast first it tried to avoid all copy of messages, but then there was a
+  deadlock; as it is the same pid that requests, and then waits for the answer,
+  this wait can not succeed.
+
+  `call -> req -> channel -> ... -> channel -> res (where do I put it) -> tell
+  call req  is ready.`
+
+  If the res has to be stored somewhere, why not the caller process? On top,
+  normally the response is ready before call is waiting to waiting for the
+  response, so it needs wait/store response (wait if data is not ready, setit
+  apart if it is)
 
   """
   use GenServer
@@ -18,16 +27,18 @@ defmodule MOM.RPC.EndPoint.Caller do
     {:ok, pid} = GenServer.start_link(__MODULE__, endpoint.out, options)
 
     MOM.RPC.EndPoint.update_in(endpoint, fn
+      # No requests possible to caller
       %MOM.RPC.Request{id: id} when not is_nil(id) ->
         MOM.Channel.send(endpoint.out, %{id: id, error: :unknown_method})
       %MOM.RPC.Request{} ->
         :ignore
+
+      # Only responses
       %MOM.RPC.Response{id: id, result: result} ->
-        from = GenServer.call(pid, {:get_from, id})
-        GenServer.reply(from, {:ok, result})
+        # Logger.debug("got response #{inspect id} #{inspect result}")
+        GenServer.cast(pid, {:set_answer, id, {:ok, result}})
       %MOM.RPC.Response.Error{id: id, error: error} ->
-        from = GenServer.call(pid, {:get_from, id})
-        GenServer.reply(from, {:error, error})
+        GenServer.cast(pid, {:set_answer, id, {:error, error}})
       end, monitor: pid)
 
     {:ok, endpoint, pid}
@@ -39,8 +50,10 @@ defmodule MOM.RPC.EndPoint.Caller do
 
   def call(client, method, params, timeout \\ 60_000) do
     {id, out} = GenServer.call(client, {:get_next_id_and_out})
-    MOM.Channel.send(out, %MOM.RPC.Request{ id: id, method: method, params: params, context: nil})
-    GenServer.call(client, {:wait_for, id}, timeout)
+    msg = %MOM.RPC.Request{ id: id, method: method, params: params, context: nil}
+    # Logger.debug("Send message #{inspect out} #{inspect msg, pretty: true}")
+    MOM.Channel.send(out, msg)
+    GenServer.call(client, {:get_answer, id}, timeout)
   end
 
   def event(client, method, params) do
@@ -55,7 +68,8 @@ defmodule MOM.RPC.EndPoint.Caller do
     {:ok, %{
       out: out,
       maxid: 1,
-      reply_to: %{}
+      wait_answer: %{},
+      answers: %{},
     }}
   end
 
@@ -68,16 +82,39 @@ defmodule MOM.RPC.EndPoint.Caller do
     {:reply, status.out, status}
   end
 
-  def handle_call({:wait_for, id}, from, status) do
-    {:noreply, %{ status |
-      reply_to: Map.put(status.reply_to, id, from)
-    }}
+  def handle_call({:get_answer, id}, from, status) do
+    # Logger.debug("Wait for #{inspect id}")
+    case Map.pop(status.answers, id) do
+      {nil, answers} ->
+        # Logger.debug("Answer not ready, wait.")
+        {:noreply, %{ status |
+          wait_answer: Map.put(status.wait_answer, id, from)
+        }}
+      {from, answers} ->
+        # Logger.debug("Answer READY, answer to #{inspect from}")
+        {:reply, from, %{ status |
+          answers: answers
+        }}
+    end
   end
-  def handle_call({:get_from, id}, _from, status) do
-    {from, reply_to} = Map.pop(status.reply_to, id)
 
-    {:reply, from, %{ status |
-      reply_to: reply_to
-    }}
+  def handle_cast({:set_answer, id, answer}, status) do
+    # Logger.debug("Got for #{inspect id}")
+    {waiter, wait_answer} = Map.pop(status.wait_answer, id)
+
+    status = case waiter do
+      nil ->
+        # Logger.debug("Ok, not really waiting, I received before time. I store who to answer to #{inspect id}.")
+        %{ status |
+          answers: Map.put(status.answers, id, answer),
+        }
+      waiter ->
+        GenServer.reply(waiter, answer)
+        %{ status |
+          wait_answer: wait_answer
+        }
+    end
+
+    {:noreply, status}
   end
 end
