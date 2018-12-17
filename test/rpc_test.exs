@@ -7,26 +7,39 @@ defmodule Serverboards.RPCTest do
   doctest MOM.RPC.Context, import: true
 
   alias MOM.RPC
-	alias MOM.RPC.EndPoint
+  alias MOM.RPC.EndPoint
+  alias MOM.RPC.EndPoint.Caller
+	alias MOM.RPC.EndPoint.MethodCaller
 
   @tag timeout: 1_000
-  test "New RPC" do
-    {:ok, mc_ep, mc} = EndPoint.MethodCaller.new()
-    {:ok, io_ep, caller} = EndPoint.Caller.new()
+  test "RPC create then connect" do
+    mc_ep = EndPoint.new()
+    io_ep = EndPoint.new()
+    {:ok, mc} = MethodCaller.start_link(mc_ep)
+    {:ok, caller} = Caller.start_link(io_ep)
 
     EndPoint.connect(mc_ep, io_ep)
 
     RPC.MethodCaller.add_method(mc, "echo", &({:ok, &1}))
 
-    res = EndPoint.Caller.call(caller, "echo", "test")
+    res = Caller.call(caller, "echo", "test")
+    Logger.debug("Echo res: #{inspect res}")
+    assert res == {:ok, "test"}
+  end
+
+  @tag timeout: 1_000
+  test "RPC pair" do
+    {mc_ep, io_ep} = EndPoint.pair()
+    {:ok, mc} = MethodCaller.start_link(mc_ep)
+    {:ok, caller} = Caller.start_link(io_ep)
+
+    RPC.MethodCaller.add_method(mc, "echo", &({:ok, &1}))
+
+    res = Caller.call(caller, "echo", "test")
     Logger.debug("Echo res: #{inspect res}")
     assert res == {:ok, "test"}
 
-    # res = EndPoint.Caller.call(caller, "dir", [])
-    # assert res == {:ok, ["dir", "echo"]}
-    #
-    # res = EndPoint.Caller.call(caller, "noecho", [])
-    # assert res == {:ok, ["dir", "echo"]}
+    # assert Caller.call(caller, "dir", []) == {:ok, ["dir", "echo"]}
   end
 
 

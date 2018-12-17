@@ -21,9 +21,7 @@ defmodule MOM.RPC.EndPoint.Caller do
   """
   use GenServer
 
-  def new(options \\ []) do
-    endpoint = MOM.RPC.EndPoint.new()
-
+  def start_link(endpoint, options \\ []) do
     {:ok, pid} = GenServer.start_link(__MODULE__, endpoint.out, options)
 
     MOM.RPC.EndPoint.update_in(endpoint, fn
@@ -41,7 +39,7 @@ defmodule MOM.RPC.EndPoint.Caller do
         GenServer.cast(pid, {:set_answer, id, {:error, error}})
       end, monitor: pid)
 
-    {:ok, endpoint, pid}
+    {:ok, pid}
   end
 
   def stop(caller, reason) do
