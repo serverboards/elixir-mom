@@ -100,7 +100,7 @@ defmodule MOM.RPC.EndPoint do
                   }
               end
               # Logger.debug("Send response #{inspect msgout}")
-              MOM.Channel.send(endpoint.out, msgout)
+              MOM.Channel.send(msg.reply, msgout)
             end
             :stop
         end
