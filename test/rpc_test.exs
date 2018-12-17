@@ -124,4 +124,46 @@ defmodule Serverboards.RPCTest do
 
     assert EndPoint.Caller.call(caller, "wait", []) == {:ok, :ok}
   end
+
+  @tag timeout: 10_000
+  test "Calls are not serialized" do
+    {endpoint_a, endpoint_b} = EndPoint.pair()
+    {:ok, caller } = Caller.start_link(endpoint_a)
+    {:ok, mc } = MethodCaller.start_link(endpoint_b)
+    context = %{}
+
+    MethodCaller.add_method mc, "foo", fn _ ->
+      Logger.debug("Wait 2s #{inspect self()}")
+      :timer.sleep(1_000)
+      {:ok, :ok}
+    end
+
+    # one call, sync, for control
+    Logger.debug("Do one for test")
+    {_, t} = MOM.Test.benchmark(fn ->
+      assert (Caller.call(caller, "foo", [])) == {:ok, :ok}
+    end)
+    assert t > 1
+    assert t < 2
+
+    Logger.debug("Do 100")
+
+    # 10 real test
+    {_, t} = MOM.Test.benchmark(fn ->
+      Logger.debug("Start measuring")
+      for i <- 1..100 do
+        Task.async(fn ->
+          Caller.call(caller, "foo", [])
+        end)
+      end |> Enum.map(fn t ->
+        Task.await(t)
+      end)
+    end)
+    assert t > 1
+    assert t < 2
+
+    Logger.debug("Done")
+  end
+
+
 end

@@ -256,7 +256,7 @@ defmodule MOM.Channel do
       func.(message)
     rescue
       error ->
-        Logger.error("Error sending message id #{inspect message.id}, error: #{inspect error}.\n#{Exception.format_stacktrace(System.stacktrace())}")
+        Logger.error("Error sending message id #{inspect Map.get(message, :id)}, error: #{inspect error}.\n#{Exception.format_stacktrace(System.stacktrace())}")
         {:error, error}
     end
   end

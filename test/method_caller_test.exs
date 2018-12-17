@@ -9,7 +9,7 @@ defmodule Serverboards.MethodCallerTest do
 
   test "Simple method caller v2" do
     {:ok, mc} = RPC.MethodCaller.start_link name: :test
-    {:ok, context} = RPC.Context.start_link
+    context = %{}
     mypid = self()
 
     RPC.MethodCaller.add_method mc, "echo", &(&1)
@@ -41,7 +41,7 @@ defmodule Serverboards.MethodCallerTest do
     {:ok, mc} = RPC.MethodCaller.start_link name: :test
     {:ok, mc2} = RPC.MethodCaller.start_link name: :test2
     {:ok, mc3} = RPC.MethodCaller.start_link name: :test3
-    {:ok, context} = RPC.Context.start_link
+    context = %{}
 
     add_method mc, "echo", &(&1)
     add_method mc, "tac", fn str -> String.reverse str end
@@ -70,7 +70,7 @@ defmodule Serverboards.MethodCallerTest do
   test "Methods with errors" do
     import MOM.RPC.MethodCaller
     {:ok, mc} = RPC.MethodCaller.start_link name: :test
-    {:ok, context} = RPC.Context.start_link
+    context = %{}
 
     add_method mc, "echo", &(&1)
     add_method mc, "tac", fn [str] -> String.reverse str end
@@ -87,7 +87,7 @@ defmodule Serverboards.MethodCallerTest do
 
   test "Complex method handlers, many calls" do
     import MOM.RPC.MethodCaller
-    {:ok, context} = RPC.Context.start_link
+    context = %{}
     {:ok, mc} = RPC.MethodCaller.start_link name: :"mc"
     {:ok, mc1} = RPC.MethodCaller.start_link name: :"mc1"
     {:ok, mc11} = RPC.MethodCaller.start_link name: :"mc11"
@@ -168,26 +168,16 @@ defmodule Serverboards.MethodCallerTest do
     IO.puts("\n20_000 RPC calls in #{tdiff}s, #{ncalls / tdiff} call/s (with asserts, recs calls and some calculations)\n")
   end
 
-  def benchmark(func) do
-    tini = :erlang.timestamp
-
-    data = func.()
-
-    tend = :erlang.timestamp
-    tdiff=:timer.now_diff(tend, tini) / 1_000_000.0
-    {data, tdiff}
-  end
-
   @tag timeout: 90_000
   test "Basic method caller benchmark" do
     tini0 = :erlang.timestamp
     Logger.debug("Mem total: #{inspect :erlang.memory()[:total], pretty: true}")
 
     import MOM.RPC.MethodCaller
-    {:ok, context} = RPC.Context.start_link
+    context = %{}
     {:ok, mc} = RPC.MethodCaller.start_link name: :"mc"
 
-    {{tbig, tsmall}, ttotal} = benchmark fn ->
+    {{tbig, tsmall}, ttotal} = MOM.Test.benchmark fn ->
       bigdata = for n <- 0..100_000 do
         {:ok, n, "This is bigdata"}
       end
@@ -200,22 +190,22 @@ defmodule Serverboards.MethodCallerTest do
       end
 
       ncalls = 500_000
-      {_, tbig} = benchmark fn ->
+      {_, tbig} = MOM.Test.benchmark fn ->
         Enum.reduce(1..ncalls, 0, fn acc, n ->
           RPC.MethodCaller.call mc, "test", [bigdata], context
         end)
       end
-      IO.puts("#{ncalls} calls in #{tbig}s. #{ncalls / tbig} calls/s")
+      IO.puts("Bigdata #{ncalls} calls in #{tbig}s. #{ncalls / tbig} calls/s")
       Logger.debug("Bigdata #{ncalls} calls in #{tbig}s. #{ncalls / tbig} calls/s")
       Logger.debug("Bigdata Memtotal #{inspect :erlang.memory()[:total], pretty: true}")
 
-      {_, tsmall} = benchmark fn ->
+      {_, tsmall} = MOM.Test.benchmark fn ->
         smalldata = hd bigdata
         Enum.reduce(1..ncalls, 0, fn acc, n ->
           RPC.MethodCaller.call mc, "test", smalldata, context
         end)
       end
-      IO.puts("#{ncalls} calls in #{tsmall}s. #{ncalls / tsmall} calls/s")
+      IO.puts("Smalldata #{ncalls} calls in #{tsmall}s. #{ncalls / tsmall} calls/s")
       Logger.debug("Smalldata #{ncalls} calls in #{tsmall}s. #{ncalls / tsmall} calls/s")
       Logger.debug("Smalldata Memtotal #{inspect :erlang.memory()[:total], pretty: true}")
 
@@ -227,62 +217,6 @@ defmodule Serverboards.MethodCallerTest do
                  "as actually no data copy should occur, and so it should " <>
                  "take the same time do both tests")
     assert (tbig / tsmall) < 10, "Tbig sould not be more than 10 times slower than tsmall (Its #{tbig / tsmall})"
-  end
-
-  @tag timeout: 10_000
-  test "Calls are not serialized" do
-    {:ok, rpc} = RPC.start_link
-    {:ok, mc} = RPC.MethodCaller.start_link
-    {:ok, context} = RPC.Context.start_link
-
-    RPC.MethodCaller.add_method mc, "foo", fn _ ->
-      Logger.debug("Wait 2s #{inspect self()}")
-      :timer.sleep(1_000)
-      {:ok, :ok}
-    end
-
-    # one call, sync, for control
-    Logger.debug("Do one for test")
-    {_, t} = benchmark(fn ->
-      assert (RPC.MethodCaller.call mc, "foo", [], context) == {:ok, :ok}
-    end)
-    assert t > 1
-    assert t < 2
-
-    Logger.debug("Do 100")
-
-    # 10 real test
-    {_, t} = benchmark(fn ->
-      Logger.debug("Start measuring")
-      for i <- 1..100 do
-        Task.async(fn ->
-          RPC.MethodCaller.call(mc, "foo", [], context)
-        end)
-      end |> Enum.map(fn t ->
-        Task.await(t)
-      end)
-    end)
-    assert t > 1
-    assert t < 2
-
-    Logger.debug("Done")
-  end
-
-  test "Accepts calls longer than 5sec" do
-    {:ok, rpc} = RPC.start_link
-    {:ok, mc} = RPC.MethodCaller.start_link
-    {:ok, context} = RPC.Context.start_link
-
-    RPC.MethodCaller.add_method mc, "foo", fn _ ->
-      Logger.debug("Wait 10s, no timeout #{inspect self()}")
-      :timer.sleep(6_000)
-      {:ok, :ok}
-    end
-    {_, t} = benchmark(fn ->
-      RPC.MethodCaller.call(mc, "foo", [], context)
-    end)
-    assert t > 6
-    assert t < 7
   end
 
 end

@@ -46,7 +46,7 @@ defmodule MOM.RPC.EndPoint.Caller do
     GenServer.stop(caller, reason)
   end
 
-  def call(client, method, params, timeout \\ 60_000) do
+  def call(client, method, params, timeout \\ 60_000) when is_number(timeout) do
     {id, in_, out} = GenServer.call(client, {:get_next_id_and_inout})
     msg = %MOM.RPC.Request{ id: id, method: method, params: params, context: nil, reply: in_ }
     # Logger.debug("Send message #{inspect out} #{inspect msg, pretty: true}")
