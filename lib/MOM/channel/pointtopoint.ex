@@ -70,18 +70,35 @@ defmodule MOM.Channel.PointToPoint do
 ```
 
   """
-  def start_link(options \\ []) do
-    MOM.Channel.start_link(dispatch: {__MODULE__, :handle_dispatch, []})
+  def start_link(options \\ nil) do
+    options = if options == nil do
+      []
+    else
+      [options]
+    end
+    MOM.Channel.start_link(dispatch: {__MODULE__, :handle_dispatch, options})
   end
 
-  def handle_dispatch(table, message, options) do
-    # Logger.debug("#{inspect self()}: Handle dispatch ptp #{inspect table} #{inspect message} | #{inspect :ets.tab2list(table)}")
+  def handle_dispatch(ptp_options, table, message, options) do
     # this code is called back at process caller of send
-    :ets.foldl(fn
+    res = :ets.foldl(fn
       {_id, {func, opts, _ref}}, :cont ->
         MOM.Channel.dispatch_one(func, message)
       _, :stop ->
         :stop
     end, :cont, table)
+
+    # If not processed, and have a default behaviour, use it. Returns the proper :stop | :cont
+    if res == :cont do
+      case ptp_options[:default] do
+        nil ->
+          :cont
+        default ->
+          default.(message, options)
+          :stop
+      end
+    else
+      :stop
+    end
   end
 end

@@ -145,8 +145,8 @@ defmodule MOM.Channel do
 
   def send(channel, message, options) do
     {:ok, {mod, fun, args}} = GenServer.call(channel, {:get_dispatcher})
+    # Logger.debug("Send to #{inspect {mod, fun, args ++ [message, options]}}")
     apply(mod, fun, args ++ [message, options])
-    # Logger.debug("Sent to #{inspect {mod, fun, args}} | #{inspect message}")
   end
 
   @doc ~S"""

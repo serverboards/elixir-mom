@@ -22,7 +22,7 @@ defmodule MOM.RPC.EndPoint.Caller do
   use GenServer
 
   def start_link(endpoint, options \\ []) do
-    {:ok, pid} = GenServer.start_link(__MODULE__, endpoint.out, options)
+    {:ok, pid} = GenServer.start_link(__MODULE__, endpoint, options)
 
     MOM.RPC.EndPoint.update_in(endpoint, fn
       # No requests possible to caller
@@ -47,8 +47,8 @@ defmodule MOM.RPC.EndPoint.Caller do
   end
 
   def call(client, method, params, timeout \\ 60_000) do
-    {id, out} = GenServer.call(client, {:get_next_id_and_out})
-    msg = %MOM.RPC.Request{ id: id, method: method, params: params, context: nil}
+    {id, in_, out} = GenServer.call(client, {:get_next_id_and_inout})
+    msg = %MOM.RPC.Request{ id: id, method: method, params: params, context: nil, reply: in_ }
     # Logger.debug("Send message #{inspect out} #{inspect msg, pretty: true}")
     MOM.Channel.send(out, msg)
     GenServer.call(client, {:get_answer, id}, timeout)
@@ -62,17 +62,18 @@ defmodule MOM.RPC.EndPoint.Caller do
   end
 
   # server impl
-  def init(out) do
+  def init(%{out: out, in: in_}) do
     {:ok, %{
       out: out,
+      in: in_,
       maxid: 1,
       wait_answer: %{},
       answers: %{},
     }}
   end
 
-  def handle_call({:get_next_id_and_out}, _from, status) do
-    {:reply, {status.maxid, status.out}, %{ status |
+  def handle_call({:get_next_id_and_inout}, _from, status) do
+    {:reply, {status.maxid, status.in, status.out}, %{ status |
       maxid: status.maxid + 1,
     }}
   end

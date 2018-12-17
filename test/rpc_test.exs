@@ -40,6 +40,23 @@ defmodule Serverboards.RPCTest do
     assert res == {:ok, "test"}
 
     assert Caller.call(caller, "dir", []) == {:ok, ["dir", "echo"]}
+    assert Caller.call(caller, "not-exists", []) == {:error, :unknown_method}
+  end
+
+  @tag timeout: 1_000
+  test "RPC two method callers chained" do
+    {mc_ep, io_ep} = EndPoint.pair()
+    {:ok, mc} = MethodCaller.start_link(mc_ep)
+    {:ok, mc2} = MethodCaller.start_link(mc_ep)
+    {:ok, caller} = Caller.start_link(io_ep)
+
+    RPC.MethodCaller.add_method(mc, "echo", &({:ok, &1}))
+    RPC.MethodCaller.add_method(mc2, "echo2", &({:ok, &1}))
+
+    assert Caller.call(caller, "echo", "test") == {:ok, "test"}
+    assert Caller.call(caller, "echo2", "test") == {:ok, "test"}
+
+    assert Caller.call(caller, "not-exists", []) == {:error, :unknown_method}
   end
 
 

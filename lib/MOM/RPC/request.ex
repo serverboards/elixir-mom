@@ -3,6 +3,7 @@ defmodule MOM.RPC.Request do
 		id: nil,
 		method: nil,
 		params: nil,
+		reply: nil, # which channel to write the answer
 		context: nil # context at calling client
 	]
 end

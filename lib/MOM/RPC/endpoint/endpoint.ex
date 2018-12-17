@@ -20,8 +20,8 @@ defmodule MOM.RPC.EndPoint do
   use GenServer
 
   def new() do
-    {:ok, in_} = MOM.Channel.PointToPoint.start_link()
-    {:ok, out} = MOM.Channel.PointToPoint.start_link()
+    {:ok, in_} = MOM.Channel.PointToPoint.start_link(default: &MOM.RPC.EndPoint.unknown_method/2)
+    {:ok, out} = MOM.Channel.PointToPoint.start_link(default: &MOM.RPC.EndPoint.unknown_method/2)
     %MOM.RPC.EndPoint{
       # Anything I receive: call request | answers
       in: in_,
@@ -35,9 +35,9 @@ defmodule MOM.RPC.EndPoint do
 
     Sets the out of each side to in of the other.
 
-    Initial implementatin dependant on endpoints creating one side, and then
+    Initial implementation dependant on endpoints creating one side, and then
     connecting, but hat would only be required if the endpoints could be N:M
-    connected, but in reality is just one-to-one.
+    connected, but in rea lity is just one-to-one.
 
     Both status can be created with (pseudocode) `pair() + new_endpoint_type(a) +
     new_endpoint_type(b)` or `new() + new() + new_endpoint_type(a) +
@@ -46,8 +46,8 @@ defmodule MOM.RPC.EndPoint do
   """
   @spec pair() :: {%MOM.RPC.EndPoint{}, %MOM.RPC.EndPoint{}}
   def pair() do
-    {:ok, outA} = MOM.Channel.PointToPoint.start_link()
-    {:ok, outB} = MOM.Channel.PointToPoint.start_link()
+    {:ok, outA} = MOM.Channel.PointToPoint.start_link(default: &MOM.RPC.EndPoint.unknown_method/2)
+    {:ok, outB} = MOM.Channel.PointToPoint.start_link(default: &MOM.RPC.EndPoint.unknown_method/2)
 
     {
       %MOM.RPC.EndPoint{
@@ -74,27 +74,29 @@ defmodule MOM.RPC.EndPoint do
   def update_in(endpoint, infunc, options \\ []) do
     MOM.Channel.subscribe(endpoint.in, fn
       %MOM.RPC.Request{} = msg ->
-        # Logger.debug("In f #{inspect infunc} #{inspect msg}")
         mcres = infunc.(msg)
+        # Logger.debug("In f #{inspect infunc} #{inspect msg} -> #{inspect mcres}")
         cont_or_stop = case mcres do
-          {:error, :unknown_method} -> :cont
-          _ -> :stop
-        end
-        if msg.id do
-          msgout = case mcres do
-            {:error, error} ->
-              %MOM.RPC.Response.Error{
-                id: msg.id,
-                error: error,
-              }
-            {:ok, result} ->
-              %MOM.RPC.Response{
-                id: msg.id,
-                result: result,
-              }
-          end
-          # Logger.debug("Send response #{inspect msgout}")
-          MOM.Channel.send(endpoint.out, msgout)
+          {:error, :unknown_method} ->
+            :cont
+          _ ->
+            if msg.id do
+              msgout = case mcres do
+                {:error, error} ->
+                  %MOM.RPC.Response.Error{
+                    id: msg.id,
+                    error: error,
+                  }
+                {:ok, result} ->
+                  %MOM.RPC.Response{
+                    id: msg.id,
+                    result: result,
+                  }
+              end
+              # Logger.debug("Send response #{inspect msgout}")
+              MOM.Channel.send(endpoint.out, msgout)
+            end
+            :stop
         end
 
         # Logger.debug("Cont or stop? #{inspect cont_or_stop}")
@@ -105,5 +107,13 @@ defmodule MOM.RPC.EndPoint do
         :stop
     end, options)
     endpoint
+  end
+
+
+  def unknown_method(message, options) do
+    # Logger.debug("Unknown method: #{inspect message} #{inspect options}")
+    if message.id != nil do
+      MOM.Channel.send(message.reply, %MOM.RPC.Response.Error{ error: :unknown_method, id: message.id })
+    end
   end
 end
