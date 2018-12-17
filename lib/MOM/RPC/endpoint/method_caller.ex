@@ -9,9 +9,15 @@ defmodule MOM.RPC.EndPoint.MethodCaller do
     MOM.RPC.EndPoint.update_in(endpoint, fn
       %MOM.RPC.Request{method: method, params: params, context: context} ->
         MOM.RPC.MethodCaller.call(mc, method, params, context)
+      _ ->
+        :wtf
       end, monitor: mc)
 
     {:ok, mc}
+  end
+
+  def stop(mc, reason \\ :normal) do
+    GenServer.stop(mc, reason)
   end
 
   def add_method(mc, method, func, options \\ []) do

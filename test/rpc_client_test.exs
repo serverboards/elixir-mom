@@ -1,6 +1,6 @@
 require Logger
 defmodule Serverboards.RPC.ClientTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
   @moduletag :capture_log
 
   test "Bad protocol" do
@@ -92,7 +92,7 @@ defmodule Serverboards.RPC.ClientTest do
     {:ok, json} = MOM.RPC.EndPoint.JSON.start_link(ep1, fn line ->
       Agent.update(context, fn _ -> line end)
     end)
-    {:ok, _caller} = MOM.RPC.EndPoint.Caller.start_link(ep2)
+    {:ok, caller} = MOM.RPC.EndPoint.Caller.start_link(ep2)
     MOM.RPC.EndPoint.tap(ep1)
 
     # events, have no reply never
@@ -108,43 +108,64 @@ defmodule Serverboards.RPC.ClientTest do
     :timer.sleep(200)
     last_line = Agent.get(context, &(&1))
     {:ok, js} = Poison.decode(last_line)
-    assert Map.get(js,"error") == "unknown_method"
+    Logger.debug("Last line #{inspect last_line}")
+    assert Map.get(js, "error") == "unknown_method"
 
     MOM.RPC.EndPoint.stop(ep1)
+    MOM.RPC.EndPoint.JSON.stop(json)
+    MOM.RPC.EndPoint.Caller.stop(caller)
   end
 
   test "As method caller" do
-    {:ok, client} = Client.start_link writef: :context
+    {:ok, context} = Agent.start_link(fn -> nil end)
+    {ep1, ep2} = MOM.RPC.EndPoint.pair()
+    MOM.RPC.EndPoint.tap(ep1)
+    {:ok, json} = MOM.RPC.EndPoint.JSON.start_link(ep1, fn line ->
+      Logger.debug("Read>> #{line}")
+      Agent.update(context, fn _ -> line end)
+    end)
+    {:ok, mc} = MOM.RPC.EndPoint.MethodCaller.start_link(ep2)
 
-    Client.add_method client, "echo", fn x -> x end
-    Client.add_method_caller client, fn msg -> msg.payload.params end
 
+    MOM.RPC.EndPoint.MethodCaller.add_method mc, "echo", fn x -> x end
 
-    {:ok, json} = Poison.encode(%{ method: "echo", params: [1,2,3], id: 1 })
-    assert (Client.parse_line client, json) == :ok
+    {:ok, jsline} = Poison.encode(%{ method: "echo", params: [1,2,3], id: 1 })
+    assert (MOM.RPC.EndPoint.JSON.parse_line json, jsline) == :ok
     :timer.sleep(200)
-    {:ok, js} = Poison.decode(Client.get client, :last_line)
+    last_line = Agent.get(context, &(&1))
+    {:ok, js} = Poison.decode(last_line)
     assert Map.get(js,"result") == [1,2,3]
 
-    Client.stop(client)
+    MOM.RPC.EndPoint.stop(ep1)
+    MOM.RPC.EndPoint.JSON.stop(json)
+    MOM.RPC.EndPoint.Caller.stop(mc)
   end
 
   test "Client calls a long running method on server method caller" do
-    {:ok, client} = Client.start_link writef: :context
+    {:ok, context} = Agent.start_link(fn -> nil end)
+    {ep1, ep2} = MOM.RPC.EndPoint.pair()
+    MOM.RPC.EndPoint.tap(ep1)
+    {:ok, json} = MOM.RPC.EndPoint.JSON.start_link(ep1, fn line ->
+      Logger.debug("Read>> #{line}")
+      Agent.update(context, fn _ -> line end)
+    end)
+    {:ok, mc} = MOM.RPC.EndPoint.MethodCaller.start_link(ep2)
 
-    Client.add_method_caller client, fn _msg ->
+
+    MOM.RPC.EndPoint.MethodCaller.add_method mc, "sleep", fn _msg ->
       :timer.sleep(7000) # 7s, 5s is the default timeout, 6 on the limit to detect it. 7 always detects it
       {:ok, :ok}
     end
 
     # call a long runing function on server
-    {:ok, json} = Poison.encode(%{ method: "sleep", params: [], id: 1 })
-    assert (Client.parse_line client, json) == :ok
+    {:ok, jsline} = Poison.encode(%{ method: "sleep", params: [], id: 1 })
+    assert (MOM.RPC.EndPoint.JSON.parse_line json, jsline) == :ok
 
     # should patiently wait
     for _i <- 1..8 do
       :timer.sleep(1_000)
-      case (Client.get client, :last_line) do
+      last_line = Agent.get(context, &(&1))
+      case last_line do
         nil ->
           true
         last_line ->
@@ -154,26 +175,37 @@ defmodule Serverboards.RPC.ClientTest do
           true
       end
     end
-    {:ok, js} = Poison.decode(Client.get client, :last_line)
+    last_line = Agent.get(context, &(&1))
+    {:ok, js} = Poison.decode(last_line)
     #Logger.debug(inspect js)
     assert Map.get(js,"result") == "ok"
 
-    Client.stop(client)
   end
 
   test "No process leaking" do
     pre_proc = :erlang.processes()
     pre_count = Enum.count(pre_proc)
 
-    {:ok, client} = Client.start_link writef: :context
 
-    Client.add_method client, "echo", &(&1)
+    {:ok, context} = Agent.start_link(fn -> nil end)
+    {ep1, ep2} = MOM.RPC.EndPoint.pair()
+    MOM.RPC.EndPoint.tap(ep1)
+    {:ok, json} = MOM.RPC.EndPoint.JSON.start_link(ep1, fn line ->
+      Logger.debug("Read>> #{line}")
+      Agent.update(context, fn _ -> line end)
+    end)
+    {:ok, mc} = MOM.RPC.EndPoint.MethodCaller.start_link(ep2)
+
+    MOM.RPC.EndPoint.MethodCaller.add_method mc, "echo", &(&1)
     # :timer.sleep(300) # settle time?
 
     mid_proc = :erlang.processes()
     mid_count = Enum.count(mid_proc)
 
-    Client.stop(client)
+    MOM.RPC.EndPoint.stop(ep1)
+    MOM.RPC.EndPoint.MethodCaller.stop(mc)
+    MOM.RPC.EndPoint.JSON.stop(json)
+    Agent.stop(context)
     # :timer.sleep(300)
 
     post_proc = :erlang.processes()

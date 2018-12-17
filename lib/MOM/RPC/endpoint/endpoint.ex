@@ -76,11 +76,23 @@ defmodule MOM.RPC.EndPoint do
     :ok
   end
 
+  @doc ~S"""
+  Simplify message managing at endpoints
+
+  Each ndpoint has to manage the messages in a similar fashion: if it is a
+  request, get the answer and give it back, if its a response, just write it.
+
+  If it is a request, it can answer {:error, :unknown_method} method to allow
+  the p2p channel chain to continue the evaluation. It can also return `:noreply
+  which means that the reply will come from any other means.
+
+  `
+  """
   def update_in(endpoint, infunc, options \\ []) do
     MOM.Channel.subscribe(endpoint.in, fn
       %MOM.RPC.Request{} = msg ->
         mcres = infunc.(msg)
-        # Logger.debug("In f #{inspect infunc} #{inspect msg} -> #{inspect mcres}")
+        Logger.debug("In f #{inspect infunc} #{inspect msg} -> #{inspect mcres}")
         cont_or_stop = case mcres do
           {:error, :unknown_method} ->
             :cont

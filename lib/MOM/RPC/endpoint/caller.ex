@@ -27,9 +27,9 @@ defmodule MOM.RPC.EndPoint.Caller do
     MOM.RPC.EndPoint.update_in(endpoint, fn
       # No requests possible to caller
       %MOM.RPC.Request{id: id} when not is_nil(id) ->
-        MOM.Channel.send(endpoint.out, %{id: id, error: :unknown_method})
+        {:error, :unknown_method}
       %MOM.RPC.Request{} ->
-        :ignore
+        {:error, :unknown_method}
 
       # Only responses
       %MOM.RPC.Response{id: id, result: result} ->

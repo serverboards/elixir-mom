@@ -14,14 +14,17 @@ defmodule MOM.RPC.EndPoint.JSON do
     {:ok, pid} = GenServer.start_link(__MODULE__, endpoint, options)
 
     # On RPC, any message in just goes to the other side
-    MOM.RPC.EndPoint.update_in(endpoint, fn %MOM.RPC.Request{method: method, params: params, reply: reply, id: id} ->
-      GenServer.cast(pid, {:push_reply_to, id, reply})
-      write_map(writef, %{
-        id: id,
-        method: method,
-        params: params
-      })
-      :noreply
+    MOM.RPC.EndPoint.update_in(endpoint, fn
+      %MOM.RPC.Request{method: method, params: params, reply: reply, id: id} ->
+        GenServer.cast(pid, {:push_reply_to, id, reply})
+        write_map(writef, %{
+          id: id,
+          method: method,
+          params: params
+        })
+        :noreply
+      other ->
+        write_map(writef, other)
     end)
     {:ok, pid}
   end
