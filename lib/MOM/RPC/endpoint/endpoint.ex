@@ -11,22 +11,20 @@ defmodule MOM.RPC.EndPoint do
   Endpoints have each an in and an out channel. When connecting two endpoints,
   it just connects outputs to inputs.
   """
-  defstruct [
-    in: nil,
-    out: nil
-  ]
-
+  defstruct in: nil,
+            out: nil
 
   use GenServer
 
   def new() do
     {:ok, in_} = MOM.Channel.PointToPoint.start_link(default: &MOM.RPC.EndPoint.unknown_method/2)
     {:ok, out} = MOM.Channel.PointToPoint.start_link(default: &MOM.RPC.EndPoint.unknown_method/2)
+
     %MOM.RPC.EndPoint{
       # Anything I receive: call request | answers
       in: in_,
       # Anything I send: call request | answers
-      out: out,
+      out: out
     }
   end
 
@@ -57,11 +55,11 @@ defmodule MOM.RPC.EndPoint do
     {
       %MOM.RPC.EndPoint{
         out: outB,
-        in: outA,
+        in: outA
       },
       %MOM.RPC.EndPoint{
         out: outA,
-        in: outB,
+        in: outB
       }
     }
   end
@@ -89,56 +87,73 @@ defmodule MOM.RPC.EndPoint do
   `
   """
   def update_in(endpoint, infunc, options \\ []) do
-    MOM.Channel.subscribe(endpoint.in, fn
-      %MOM.RPC.Request{} = msg ->
-        mcres = infunc.(msg)
-        Logger.debug("In f #{inspect infunc} #{inspect msg} -> #{inspect mcres}")
-        cont_or_stop = case mcres do
-          {:error, :unknown_method} ->
-            :cont
-          :noreply ->
-            :stop
-          _ ->
-            if msg.id do
-              msgout = case mcres do
-                {:error, error} ->
-                  %MOM.RPC.Response.Error{
-                    id: msg.id,
-                    error: error,
-                  }
-                {:ok, result} ->
-                  %MOM.RPC.Response{
-                    id: msg.id,
-                    result: result,
-                  }
-                # Simple case answer. It is converted to {:ok, res}
-                other ->
-                  %MOM.RPC.Response{
-                    id: msg.id,
-                    result: other,
-                  }
-              end
-              # Logger.debug("Send response #{inspect msgout}")
-              MOM.Channel.send(msg.reply, msgout)
-            end
-            :stop
-        end
+    MOM.Channel.subscribe(
+      endpoint.in,
+      fn
+        %MOM.RPC.Request{} = msg ->
+          mcres = infunc.(msg)
+          Logger.debug("In f #{inspect(infunc)} #{inspect(msg)} -> #{inspect(mcres)}")
 
-        # Logger.debug("Cont or stop? #{inspect cont_or_stop}")
-        cont_or_stop
-      msg ->
-        # Logger.debug("Got response? #{inspect msg}")
-        infunc.(msg)
-        :stop
-    end, options)
+          cont_or_stop =
+            case mcres do
+              {:error, :unknown_method} ->
+                :cont
+
+              :noreply ->
+                :stop
+
+              _ ->
+                if msg.id do
+                  msgout =
+                    case mcres do
+                      {:error, error} ->
+                        %MOM.RPC.Response.Error{
+                          id: msg.id,
+                          error: error
+                        }
+
+                      {:ok, result} ->
+                        %MOM.RPC.Response{
+                          id: msg.id,
+                          result: result
+                        }
+
+                      # Simple case answer. It is converted to {:ok, res}
+                      other ->
+                        %MOM.RPC.Response{
+                          id: msg.id,
+                          result: other
+                        }
+                    end
+
+                  # Logger.debug("Send response #{inspect msgout}")
+                  MOM.Channel.send(msg.reply, msgout)
+                end
+
+                :stop
+            end
+
+          # Logger.debug("Cont or stop? #{inspect cont_or_stop}")
+          cont_or_stop
+
+        msg ->
+          # Logger.debug("Got response? #{inspect msg}")
+          infunc.(msg)
+          :stop
+      end,
+      options
+    )
+
     endpoint
   end
-
 
   def unknown_method(message, _options) do
     # Logger.debug("Unknown method: #{inspect message} #{inspect options}")
     if message.id != nil do
-      MOM.Channel.send(message.reply, %MOM.RPC.Response.Error{ error: :unknown_method, id: message.id })
+      MOM.Channel.send(message.reply, %MOM.RPC.Response.Error{
+        error: :unknown_method,
+        id: message.id
+      })
     end
   end
 

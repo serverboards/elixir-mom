@@ -5,7 +5,6 @@ defmodule MOM.ChannelTest do
   @moduletag :capture_log
   import ExUnit.CaptureLog
 
-
   test "Simple channel" do
     {:ok, channel} = MOM.Channel.start_link()
 
@@ -30,14 +29,18 @@ defmodule MOM.ChannelTest do
     :ets.insert(res, {:res_a, 0})
     :ets.insert(res, {:res_b, 0})
 
-    {:ok, _first_id} = MOM.Channel.subscribe(channel_a, fn _message ->
-      [res_a: n] = :ets.lookup(res, :res_a)
-      :ets.insert(res, {:res_a, n+1})
-    end)
-    {:ok, _first_id} = MOM.Channel.subscribe(channel_b, fn _message ->
-      [res_b: n] = :ets.lookup(res, :res_b)
-      :ets.insert(res, {:res_b, n+1})
-    end)
+    {:ok, _first_id} =
+      MOM.Channel.subscribe(channel_a, fn _message ->
+        [res_a: n] = :ets.lookup(res, :res_a)
+        :ets.insert(res, {:res_a, n + 1})
+      end)
+
+    {:ok, _first_id} =
+      MOM.Channel.subscribe(channel_b, fn _message ->
+        [res_b: n] = :ets.lookup(res, :res_b)
+        :ets.insert(res, {:res_b, n + 1})
+      end)
+
     MOM.Channel.send(channel_a, %{})
     MOM.Channel.send(channel_a, %{})
     MOM.Channel.send(channel_a, %{})
@@ -49,21 +52,23 @@ defmodule MOM.ChannelTest do
     assert :ets.lookup(res, :res_b) == [res_b: 1]
   end
 
-
   test "Multiple subscribers" do
     {:ok, channel} = MOM.Channel.start_link()
 
     res = :ets.new(:res, [])
     :ets.insert(res, {:res, 0})
 
-    {:ok, _first_id} = MOM.Channel.subscribe(channel, fn _message ->
-      [res: n] = :ets.lookup(res, :res)
-      :ets.insert(res, {:res, n+1})
-    end)
-    {:ok, second_id} = MOM.Channel.subscribe(channel, fn _message ->
-      [res: n] = :ets.lookup(res, :res)
-      :ets.insert(res, {:res, n*2})
-    end)
+    {:ok, _first_id} =
+      MOM.Channel.subscribe(channel, fn _message ->
+        [res: n] = :ets.lookup(res, :res)
+        :ets.insert(res, {:res, n + 1})
+      end)
+
+    {:ok, second_id} =
+      MOM.Channel.subscribe(channel, fn _message ->
+        [res: n] = :ets.lookup(res, :res)
+        :ets.insert(res, {:res, n * 2})
+      end)
 
     n = MOM.Channel.send(channel, %{})
     assert :ets.lookup(res, :res) == [res: 2]
@@ -92,14 +97,17 @@ defmodule MOM.ChannelTest do
     res = :ets.new(:res, [])
     :ets.insert(res, {:res, 0})
 
-    {:ok, _first_id} = MOM.Channel.subscribe(:test_channel_by_name, fn _message ->
-      [res: n] = :ets.lookup(res, :res)
-      :ets.insert(res, {:res, n+1})
-    end)
-    {:ok, second_id} = MOM.Channel.subscribe(:test_channel_by_name, fn _message ->
-      [res: n] = :ets.lookup(res, :res)
-      :ets.insert(res, {:res, n*2})
-    end)
+    {:ok, _first_id} =
+      MOM.Channel.subscribe(:test_channel_by_name, fn _message ->
+        [res: n] = :ets.lookup(res, :res)
+        :ets.insert(res, {:res, n + 1})
+      end)
+
+    {:ok, second_id} =
+      MOM.Channel.subscribe(:test_channel_by_name, fn _message ->
+        [res: n] = :ets.lookup(res, :res)
+        :ets.insert(res, {:res, n * 2})
+      end)
 
     n = MOM.Channel.send(:test_channel_by_name, %{})
     assert :ets.lookup(res, :res) == [res: 2]
@@ -118,18 +126,21 @@ defmodule MOM.ChannelTest do
     res = :ets.new(:res, [:public])
     :ets.insert(res, {:res, 0})
 
-    {:ok, _first_id} = MOM.Channel.subscribe(channel, fn _message ->
-      assert selfpid != self()
-      :timer.sleep(200)
-      [res: n] = :ets.lookup(res, :res)
-      :ets.insert(res, {:res, n+1})
-    end)
-    {:ok, _second_id} = MOM.Channel.subscribe(channel, fn _message ->
-      assert selfpid != self()
-      :timer.sleep(200)
-      [res: n] = :ets.lookup(res, :res)
-      :ets.insert(res, {:res, n*2})
-    end)
+    {:ok, _first_id} =
+      MOM.Channel.subscribe(channel, fn _message ->
+        assert selfpid != self()
+        :timer.sleep(200)
+        [res: n] = :ets.lookup(res, :res)
+        :ets.insert(res, {:res, n + 1})
+      end)
+
+    {:ok, _second_id} =
+      MOM.Channel.subscribe(channel, fn _message ->
+        assert selfpid != self()
+        :timer.sleep(200)
+        [res: n] = :ets.lookup(res, :res)
+        :ets.insert(res, {:res, n * 2})
+      end)
 
     MOM.Channel.send(channel, %{})
     assert :ets.lookup(res, :res) == [res: 0]
@@ -139,22 +150,25 @@ defmodule MOM.ChannelTest do
     MOM.Channel.stop(channel)
   end
 
-
   test "Point To Point Channels stop on first that returns :stop. Else return :cont." do
     {:ok, channel} = MOM.Channel.PointToPoint.start_link()
     res = :ets.new(:res, [])
     :ets.insert(res, {:res, 0})
 
-    {:ok, first_id} = MOM.Channel.subscribe(channel, fn _message ->
-      [res: n] = :ets.lookup(res, :res)
-      :ets.insert(res, {:res, n+1})
-      :stop
-    end)
-    {:ok, second_id} = MOM.Channel.subscribe(channel, fn _message ->
-      [res: n] = :ets.lookup(res, :res)
-      :ets.insert(res, {:res, n * 20})
-      :cont
-    end)
+    {:ok, first_id} =
+      MOM.Channel.subscribe(channel, fn _message ->
+        [res: n] = :ets.lookup(res, :res)
+        :ets.insert(res, {:res, n + 1})
+        :stop
+      end)
+
+    {:ok, second_id} =
+      MOM.Channel.subscribe(channel, fn _message ->
+        [res: n] = :ets.lookup(res, :res)
+        :ets.insert(res, {:res, n * 20})
+        :cont
+      end)
+
     MOM.Channel.send(channel, %{})
     assert :ets.lookup(res, :res) == [res: 1]
 
@@ -173,13 +187,15 @@ defmodule MOM.ChannelTest do
 
     Task.async(fn ->
       MOM.Channel.subscribe(:test_dead, fn _message ->
-        flunk "I should be dead and not receive messages"
+        flunk("I should be dead and not receive messages")
       end)
     end)
+
     MOM.Channel.subscribe(:test_dead, fn _message ->
       [res: n] = :ets.lookup(res, :res)
-      :ets.insert(res, {:res, n+1})
+      :ets.insert(res, {:res, n + 1})
     end)
+
     :timer.sleep(100)
 
     MOM.Channel.send(:test_dead, %{})
@@ -191,16 +207,19 @@ defmodule MOM.ChannelTest do
       Logger.debug("Test")
       raise "Error at big fail test"
     end)
+
     MOM.Channel.subscribe(:big_fail_test, fn _msg ->
       pid = Task.async(fn -> nil end)
       :timer.sleep(100)
       send(pid, {:message_to_dead_process})
     end)
-    captured = capture_log(fn ->
-      MOM.Channel.send(:big_fail_test, %{})
-    end)
 
-    Logger.debug("Captured #{inspect captured}")
+    captured =
+      capture_log(fn ->
+        MOM.Channel.send(:big_fail_test, %{})
+      end)
+
+    Logger.debug("Captured #{inspect(captured)}")
 
     assert String.contains?(captured, "Error at big fail test")
     assert String.contains?(captured, "argument error")

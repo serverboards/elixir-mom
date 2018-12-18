@@ -16,7 +16,7 @@ defmodule MOM.Channel.PointToPoint do
   To use it, use normal Channel methods (send, subscribe, unsubscribe) on a
   PointToPoint.start_link.
 
-```
+  ```
   iex> require Logger
   iex> alias MOM.{Channel, Message, RPC}
   iex> {:ok, ch} = Channel.PointToPoint.start_link
@@ -45,7 +45,7 @@ defmodule MOM.Channel.PointToPoint do
   iex> Channel.send(ch, %Message{ id: 0, payload: %RPC.Message{ method: "other", params: ["Hello"]}} )
   :nok
 
-```
+  ```
 
   Channels can self-unsubscribe returning :unsubscribe from the
   called function.
@@ -67,35 +67,45 @@ defmodule MOM.Channel.PointToPoint do
   iex> Agent.get(data, &(&1))
   1
 
-```
+  ```
 
   """
   def start_link(options \\ nil) do
-    options = if options == nil do
-      []
-    else
-      [options]
-    end
+    options =
+      if options == nil do
+        []
+      else
+        [options]
+      end
+
     MOM.Channel.start_link(dispatch: {__MODULE__, :handle_dispatch, options})
   end
 
   def handle_dispatch(table, message, options) do
     handle_dispatch([], table, message, options)
   end
+
   def handle_dispatch(ptp_options, table, message, options) do
     # this code is called back at process caller of send
-    res = :ets.foldl(fn
-      {_id, {func, _opts, _ref}}, :cont ->
-        MOM.Channel.dispatch_one(func, message)
-      _, :stop ->
-        :stop
-    end, :cont, table)
+    res =
+      :ets.foldl(
+        fn
+          {_id, {func, _opts, _ref}}, :cont ->
+            MOM.Channel.dispatch_one(func, message)
+
+          _, :stop ->
+            :stop
+        end,
+        :cont,
+        table
+      )
 
     # If not processed, and have a default behaviour, use it. Returns the proper :stop | :cont
     if res == :cont do
       case ptp_options[:default] do
         nil ->
           :cont
+
         default ->
           default.(message, options)
           :stop

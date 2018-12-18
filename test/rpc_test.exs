@@ -7,7 +7,7 @@ defmodule Serverboards.RPCTest do
   alias MOM.RPC
   alias MOM.RPC.EndPoint
   alias MOM.RPC.EndPoint.Caller
-	alias MOM.RPC.EndPoint.MethodCaller
+  alias MOM.RPC.EndPoint.MethodCaller
 
   @tag timeout: 1_000
   test "RPC create then connect" do
@@ -18,10 +18,10 @@ defmodule Serverboards.RPCTest do
 
     EndPoint.connect(mc_ep, io_ep)
 
-    RPC.MethodCaller.add_method(mc, "echo", &({:ok, &1}))
+    RPC.MethodCaller.add_method(mc, "echo", &{:ok, &1})
 
     res = Caller.call(caller, "echo", "test")
-    Logger.debug("Echo res: #{inspect res}")
+    Logger.debug("Echo res: #{inspect(res)}")
     assert res == {:ok, "test"}
   end
 
@@ -31,10 +31,10 @@ defmodule Serverboards.RPCTest do
     {:ok, mc} = MethodCaller.start_link(mc_ep)
     {:ok, caller} = Caller.start_link(io_ep)
 
-    RPC.MethodCaller.add_method(mc, "echo", &({:ok, &1}))
+    RPC.MethodCaller.add_method(mc, "echo", &{:ok, &1})
 
     res = Caller.call(caller, "echo", "test")
-    Logger.debug("Echo res: #{inspect res}")
+    Logger.debug("Echo res: #{inspect(res)}")
     assert res == {:ok, "test"}
 
     assert Caller.call(caller, "dir", []) == {:ok, ["dir", "echo"]}
@@ -48,8 +48,8 @@ defmodule Serverboards.RPCTest do
     {:ok, caller} = Caller.start_link(io_ep)
     {:ok, mc2} = MethodCaller.start_link(mc_ep)
 
-    RPC.MethodCaller.add_method(mc, "echo", &({:ok, &1}))
-    RPC.MethodCaller.add_method(mc2, "echo2", &({:ok, &1}))
+    RPC.MethodCaller.add_method(mc, "echo", &{:ok, &1})
+    RPC.MethodCaller.add_method(mc2, "echo2", &{:ok, &1})
 
     assert Caller.call(caller, "echo", "test") == {:ok, "test"}
     assert Caller.call(caller, "echo2", "test") == {:ok, "test"}
@@ -66,61 +66,63 @@ defmodule Serverboards.RPCTest do
     {:ok, mc2} = MOM.RPC.MethodCaller.start_link()
 
     MOM.RPC.MethodCaller.add_method_caller(mc, mc2)
-    RPC.MethodCaller.add_method(mc, "echo", &({:ok, &1}))
-    RPC.MethodCaller.add_method(mc2, "echo2", &({:ok, &1}))
+    RPC.MethodCaller.add_method(mc, "echo", &{:ok, &1})
+    RPC.MethodCaller.add_method(mc2, "echo2", &{:ok, &1})
 
     assert Caller.call(caller, "echo", "test") == {:ok, "test"}
     assert Caller.call(caller, "echo2", "test") == {:ok, "test"}
     assert Caller.call(caller, "dir", []) == {:ok, ["dir", "echo", "echo2"]}
   end
 
+  test "Simple RPC use" do
+    {endpoint_a, endpoint_b} = EndPoint.pair()
+    {:ok, caller} = Caller.start_link(endpoint_a)
+    {:ok, mc} = MethodCaller.start_link(endpoint_b)
+    EndPoint.tap(endpoint_a)
 
-	test "Simple RPC use" do
-		{endpoint_a, endpoint_b} = EndPoint.pair()
-    {:ok, caller } = Caller.start_link(endpoint_a)
-    {:ok, mc } = MethodCaller.start_link(endpoint_b)
-		EndPoint.tap( endpoint_a )
+    MethodCaller.add_method(mc, "echo", & &1, async: true)
 
-		MethodCaller.add_method mc, "echo", &(&1), async: true
+    # simple direct call
+    assert EndPoint.Caller.call(caller, "echo", "hello") == {:ok, "hello"}
 
-		# simple direct call
-		assert EndPoint.Caller.call(caller, "echo", "hello") == {:ok, "hello"}
-
-		# call unknown
-		assert EndPoint.Caller.call(caller, "pong", nil) == {:error, :unknown_method}
-	end
-
+    # call unknown
+    assert EndPoint.Caller.call(caller, "pong", nil) == {:error, :unknown_method}
+  end
 
   test "RPC method with pattern matching" do
     {endpoint_a, endpoint_b} = EndPoint.pair()
-    {:ok, caller } = Caller.start_link(endpoint_a)
-    {:ok, mc } = MethodCaller.start_link(endpoint_b)
+    {:ok, caller} = Caller.start_link(endpoint_a)
+    {:ok, mc} = MethodCaller.start_link(endpoint_b)
 
-    EndPoint.tap( endpoint_a )
+    EndPoint.tap(endpoint_a)
 
-    EndPoint.MethodCaller.add_method mc, "echo", fn
-      [_] -> "one item"
-      [] -> "empty"
-      %{ type: _ } -> {:ok, "map with type"}
-    end, async: true
+    EndPoint.MethodCaller.add_method(
+      mc,
+      "echo",
+      fn
+        [_] -> "one item"
+        [] -> "empty"
+        %{type: _} -> {:ok, "map with type"}
+      end,
+      async: true
+    )
 
     assert EndPoint.Caller.call(caller, "echo", []) == {:ok, "empty"}
     assert EndPoint.Caller.call(caller, "echo", [1]) == {:ok, "one item"}
     assert EndPoint.Caller.call(caller, "echo", %{}) == {:error, :bad_arity}
-    assert EndPoint.Caller.call(caller, "echo", %{ type: :test}) == {:ok, "map with type"}
+    assert EndPoint.Caller.call(caller, "echo", %{type: :test}) == {:ok, "map with type"}
   end
-
 
   test "Long running RPC call" do
     IO.puts("Wait 10 secs. No timeouts anywhere.")
     {endpoint_a, endpoint_b} = EndPoint.pair()
-    {:ok, caller } = Caller.start_link(endpoint_a)
-    {:ok, mc } = MethodCaller.start_link(endpoint_b)
+    {:ok, caller} = Caller.start_link(endpoint_a)
+    {:ok, mc} = MethodCaller.start_link(endpoint_b)
 
-    EndPoint.MethodCaller.add_method mc, "wait", fn [] ->
+    EndPoint.MethodCaller.add_method(mc, "wait", fn [] ->
       Process.sleep(10_000)
       :ok
-    end
+    end)
 
     assert EndPoint.Caller.call(caller, "wait", []) == {:ok, :ok}
   end
@@ -128,41 +130,46 @@ defmodule Serverboards.RPCTest do
   @tag timeout: 10_000
   test "Calls are not serialized" do
     {endpoint_a, endpoint_b} = EndPoint.pair()
-    {:ok, caller } = Caller.start_link(endpoint_a)
-    {:ok, mc } = MethodCaller.start_link(endpoint_b)
+    {:ok, caller} = Caller.start_link(endpoint_a)
+    {:ok, mc} = MethodCaller.start_link(endpoint_b)
 
-    MethodCaller.add_method mc, "foo", fn _ ->
-      Logger.debug("Wait 2s #{inspect self()}")
+    MethodCaller.add_method(mc, "foo", fn _ ->
+      Logger.debug("Wait 2s #{inspect(self())}")
       :timer.sleep(1_000)
       {:ok, :ok}
-    end
+    end)
 
     # one call, sync, for control
     Logger.debug("Do one for test")
-    {_, t} = MOM.Test.benchmark(fn ->
-      assert (Caller.call(caller, "foo", [])) == {:ok, :ok}
-    end)
+
+    {_, t} =
+      MOM.Test.benchmark(fn ->
+        assert Caller.call(caller, "foo", []) == {:ok, :ok}
+      end)
+
     assert t > 1
     assert t < 2
 
     Logger.debug("Do 100")
 
     # 10 real test
-    {_, t} = MOM.Test.benchmark(fn ->
-      Logger.debug("Start measuring")
-      for _i <- 1..100 do
-        Task.async(fn ->
-          Caller.call(caller, "foo", [])
+    {_, t} =
+      MOM.Test.benchmark(fn ->
+        Logger.debug("Start measuring")
+
+        for _i <- 1..100 do
+          Task.async(fn ->
+            Caller.call(caller, "foo", [])
+          end)
+        end
+        |> Enum.map(fn t ->
+          Task.await(t)
         end)
-      end |> Enum.map(fn t ->
-        Task.await(t)
       end)
-    end)
+
     assert t > 1
     assert t < 2
 
     Logger.debug("Done")
   end
-
-
 end

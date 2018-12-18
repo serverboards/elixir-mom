@@ -4,7 +4,7 @@ defmodule MOM.Tap do
   @moduledoc ~S"""
   Sends to logger all messages on this channel.
 
-```
+  ```
   iex> {:ok, ch} = MOM.Channel.Broadcast.start_link
   iex> tap_id = MOM.Tap.tap(ch, "my tap")
   iex> MOM.Channel.send(ch, %MOM.Message{payload: "test", id: 1})
@@ -12,12 +12,13 @@ defmodule MOM.Tap do
   iex> MOM.Tap.untap(ch, tap_id)
   :ok
 
-```
+  ```
   """
   def tap(channel, id \\ "#") do
     MOM.Channel.subscribe(channel, fn msg ->
-      Logger.info("Tap[#{id}]: #{inspect msg}")
-      :cont # at P2P channels, this does not consume message
+      Logger.info("Tap[#{id}]: #{inspect(msg)}")
+      # at P2P channels, this does not consume message
+      :cont
     end)
   end
 

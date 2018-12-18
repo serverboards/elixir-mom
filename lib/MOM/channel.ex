@@ -18,7 +18,7 @@ defmodule MOM.Channel do
 
   ## Examples
 
-```
+  ```
   iex> require Logger
   iex> alias MOM.{Message, Channel}
   iex> {:ok, ch} = Channel.Broadcast.start_link
@@ -29,11 +29,11 @@ defmodule MOM.Channel do
   iex> Channel.unsubscribe(ch, 1)
   :ok
 
-```
+  ```
 
   It is allowed to call the channels after an atom
 
-```
+  ```
   iex> require Logger
   iex> alias MOM.{Message, Channel}
   iex> Channel.Named.start_link
@@ -42,7 +42,7 @@ defmodule MOM.Channel do
   iex> Channel.unsubscribe(:deadletter, id)
   :ok
 
-```
+  ```
 
   # Channel subscription
 
@@ -60,7 +60,7 @@ defmodule MOM.Channel do
 
   A subscription normally calls a function when a message arrives
 
-```
+  ```
   iex> alias MOM.{Channel, Message}
   iex> require Logger
   iex> {:ok, ch} = Channel.Broadcast.start_link
@@ -70,24 +70,24 @@ defmodule MOM.Channel do
   iex> Channel.send(ch, %MOM.Message{ id: 0 })
   :ok
 
-```
+  ```
 
   Its possible to subscribe to named channels
 
-```
+  ```
   iex> alias MOM.{Channel, Message}
   iex> Channel.subscribe(:named_channel, fn _ -> :ok end)
   iex> Channel.send(:named_channel, %Message{})
   :ok
 
-```
+  ```
 
   Its possible to subscribe a channel to a channel. This is useful to create
   tree like structures where some channels automatically write to another.
 
   All messages in orig are send automatically to dest.
 
-```
+  ```
   iex> require Logger
   iex> alias MOM.{Channel, Message}
   iex> {:ok, a} = Channel.Broadcast.start_link
@@ -99,7 +99,7 @@ defmodule MOM.Channel do
   iex> Channel.send(a, %MOM.Message{ id: 0, payload: "test"})
   :ok
 
-```
+  ```
 
   -- rework
 
@@ -119,25 +119,30 @@ defmodule MOM.Channel do
   def subscribe(channel, function) do
     subscribe(channel, function, [])
   end
+
   def subscribe(channel, function, options) when is_atom(channel) do
     pid = get_or_create_channel(channel)
     subscribe(pid, function, options)
   end
+
   def subscribe(channel, function, options) do
     # default monitor value.
     options = options ++ [{:monitor, self()}]
     GenServer.call(channel, {:subscribe, function, options})
   end
+
   @doc "Unsubscribes to a channel"
   def unsubscribe(channel, id) when is_atom(channel) do
     pid = get_or_create_channel(channel)
     GenServer.call(pid, {:unsubscribe, id})
   end
+
   def unsubscribe(channel, id) do
     GenServer.call(channel, {:unsubscribe, id})
   end
 
   def send(channel, message), do: send(channel, message, [])
+
   def send(channel, message, options) when is_atom(channel) do
     pid = get_or_create_channel(channel)
     send(pid, message, options)
@@ -154,19 +159,27 @@ defmodule MOM.Channel do
   """
   def connect(channel_a, channel_b) do
     # Logger.debug("Connect #{inspect {channel_a, channel_b}}")
-    subscribe(channel_a, fn msg ->
-      # Logger.debug("Pipe message #{inspect msg}")
-      MOM.Channel.send(channel_b, msg)
-      :stop
-    end, monitor: channel_b)
+    subscribe(
+      channel_a,
+      fn msg ->
+        # Logger.debug("Pipe message #{inspect msg}")
+        MOM.Channel.send(channel_b, msg)
+        :stop
+      end,
+      monitor: channel_b
+    )
   end
 
   def start_link(options \\ []) do
-    init = if options[:dispatch] do
-      %{
-        dispatch: options[:dispatch]
-      }
-    else %{} end
+    init =
+      if options[:dispatch] do
+        %{
+          dispatch: options[:dispatch]
+        }
+      else
+        %{}
+      end
+
     GenServer.start_link(__MODULE__, init, options)
   end
 
@@ -176,26 +189,30 @@ defmodule MOM.Channel do
 
   defp get_or_create_channel(channel) do
     case Process.whereis(channel) do
-        pid when is_pid(pid) -> pid
-        nil ->
-          case start_link(name: channel) do
-            {:ok, pid} -> pid
-            {:error, {:already_started, pid}} -> pid
-          end
+      pid when is_pid(pid) ->
+        pid
+
+      nil ->
+        case start_link(name: channel) do
+          {:ok, pid} -> pid
+          {:error, {:already_started, pid}} -> pid
+        end
     end
   end
-
 
   ## basic server impl
   def init(state) do
     table = :ets.new(:subscriptions, [])
     monitored = :ets.new(:monitored, [])
 
-    state = Map.merge(state, %{ maxid: 0, table: table, monitored: monitored})
+    state = Map.merge(state, %{maxid: 0, table: table, monitored: monitored})
 
-    state = if Map.get(state, :dispatch) == nil do
-      Map.put(state, :dispatch, {__MODULE__, :handle_dispatch, []})
-    else state end
+    state =
+      if Map.get(state, :dispatch) == nil do
+        Map.put(state, :dispatch, {__MODULE__, :handle_dispatch, []})
+      else
+        state
+      end
 
     {:ok, state}
   end
@@ -203,35 +220,37 @@ defmodule MOM.Channel do
   def handle_call({:subscribe, func, options}, _from, state) do
     maxid = state.maxid
 
-    ref = case options[:monitor] do
-      nil ->
-        nil
-      pid ->
-        ref = Process.monitor(pid)
-        :ets.insert(state.monitored, {ref, maxid})
-        ref
-    end
+    ref =
+      case options[:monitor] do
+        nil ->
+          nil
+
+        pid ->
+          ref = Process.monitor(pid)
+          :ets.insert(state.monitored, {ref, maxid})
+          ref
+      end
 
     :ets.insert(state.table, {maxid, {func, options, ref}})
 
     # Logger.debug("Subscribed #{inspect self()} #{inspect state.table}: #{inspect :ets.tab2list(state.table)} | #{inspect options[:monitor]}")
 
-    state = %{ state
-      | maxid: state.maxid + 1
-    }
+    state = %{state | maxid: state.maxid + 1}
 
     {:reply, {:ok, maxid}, state}
   end
 
   def handle_call({:unsubscribe, id}, _from, state) do
-    deleted = case :ets.lookup(state.table, id) do
-      [{^id, {_func, _options, ref}}] ->
-        :ets.delete(state.monitored, ref)
-        :ets.delete(state.table, id)
-        true
-      [] ->
-        false
-    end
+    deleted =
+      case :ets.lookup(state.table, id) do
+        [{^id, {_func, _options, ref}}] ->
+          :ets.delete(state.monitored, ref)
+          :ets.delete(state.table, id)
+          true
+
+        [] ->
+          false
+      end
 
     {:reply, deleted, state}
   end
@@ -241,14 +260,17 @@ defmodule MOM.Channel do
     {:reply, {:ok, {mod, fun, args ++ [state.table]}}, state}
   end
 
-
   def handle_dispatch(table, message, _options) do
     # Logger.debug("Handle dispatch simple #{inspect self()} #{inspect message}")
     # this code is called back at process caller of send
-    :ets.foldl(fn {_, {func, _opts, _ref}}, acc ->
-      dispatch_one(func, message)
-      acc + 1
-    end, 0, table)
+    :ets.foldl(
+      fn {_, {func, _opts, _ref}}, acc ->
+        dispatch_one(func, message)
+        acc + 1
+      end,
+      0,
+      table
+    )
   end
 
   def dispatch_one(func, message) do
@@ -256,11 +278,16 @@ defmodule MOM.Channel do
       func.(message)
     rescue
       error ->
-        Logger.error("Error sending message id #{inspect Map.get(message, :id)}, error: #{inspect error}.\n#{Exception.format_stacktrace(System.stacktrace())}")
+        Logger.error(
+          "Error sending message id #{inspect(Map.get(message, :id))}, error: #{inspect(error)}.\n#{
+            Exception.format_stacktrace(System.stacktrace())
+          }"
+        )
+
         {:error, error}
     catch
       :exit, _ ->
-        Logger.error("Error sending message id #{inspect Map.get(message, :id)}, error: :exit")
+        Logger.error("Error sending message id #{inspect(Map.get(message, :id))}, error: :exit")
         {:error, :exit}
     end
   end

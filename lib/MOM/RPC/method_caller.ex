@@ -11,7 +11,7 @@ defmodule MOM.RPC.MethodCaller do
 
   ## Example
 
-```
+  ```
   iex> alias MOM.RPC.MethodCaller
   iex> {:ok, mc} = MethodCaller.start_link()
   iex> MethodCaller.add_method mc, "ping", fn _ -> "pong" end, async: false
@@ -20,9 +20,9 @@ defmodule MOM.RPC.MethodCaller do
   iex> MethodCaller.call mc, "dir", [], nil
   {:ok, ["dir", "ping"]}
 
-```
+  ```
 
--- NEW
+  -- NEW
 
   Method caller is a tree of disct of things to call. When you ask (lookup) for
   a method it returns a {callable, options} that will do the call itself.
@@ -62,7 +62,7 @@ defmodule MOM.RPC.MethodCaller do
 
   ## Example
 
-```
+  ```
   iex> alias MOM.RPC.MethodCaller
   iex> {:ok, mc} = MethodCaller.start_link
   iex> MethodCaller.add_method mc, "test_ok", fn _ -> {:ok, :response_ok} end
@@ -75,12 +75,11 @@ defmodule MOM.RPC.MethodCaller do
   iex> MethodCaller.call mc, "test_plain", [], nil
   {:ok, :response_plain_ok}
 
-```
+  ```
   """
   def add_method(pid, name, f, options \\ []) do
     GenServer.call(pid, {:add_method, name, f, options})
   end
-
 
   @doc ~S"""
   Method callers can be chained, so that if current does not resolve, try on another
@@ -96,7 +95,7 @@ defmodule MOM.RPC.MethodCaller do
   I will create three method callers, so that a calls, and b too. Method can
   be shadowed at parent too.
 
-```
+  ```
   iex> alias MOM.RPC.{MethodCaller, Context}
   iex> {:ok, a} = MethodCaller.start_link
   iex> {:ok, b} = MethodCaller.start_link
@@ -125,11 +124,11 @@ defmodule MOM.RPC.MethodCaller do
   iex> MethodCaller.call b, "d", [], context
   {:error, :unknown_method}
 
-```
+  ```
 
   Custom method caller that calls a function
 
-```
+  ```
   iex> alias MOM.RPC.MethodCaller
   iex> {:ok, mc} = MethodCaller.start_link
   iex> MethodCaller.add_method_caller(mc, fn msg ->
@@ -143,15 +142,15 @@ defmodule MOM.RPC.MethodCaller do
   iex> MethodCaller.call mc, "world.hello", [], nil
   {:error, :unknown_method}
 
-```
+  ```
   """
   def add_method_caller(pid, pid) do
     raise RuntimeError, "Cant add a method caller to itself."
   end
+
   def add_method_caller(pid, nmc) when is_pid(pid) and is_pid(nmc) do
     GenServer.call(pid, {:add_method_caller, nmc})
   end
-
 
   @doc ~S"""
   Adds a guard to the method caller
@@ -177,7 +176,7 @@ defmodule MOM.RPC.MethodCaller do
 
   It creates a method and a guard.
 
-```
+  ```
   iex> require Logger
   iex> {:ok, mc} = start_link()
   iex> add_method mc, "echo", &(&1), require_perm: "echo"
@@ -210,7 +209,7 @@ defmodule MOM.RPC.MethodCaller do
   iex> call mc, "dir", [], %{ perms: ["echo"] }
   {:ok, ["dir", "echo", "echo_fn"]}
 
-```
+  ```
 
   In this example a map is used as context. Normally it would be a RPC.Context.
   """
@@ -222,11 +221,11 @@ defmodule MOM.RPC.MethodCaller do
     GenServer.call(pid, {:lookup, method})
   end
 
-
   def call(mc, method, args, context) when is_pid(mc) do
     case lookup(mc, method) do
       nil ->
         {:error, :unknown_method}
+
       func_options ->
         call(func_options, args, context)
     end
@@ -242,17 +241,24 @@ defmodule MOM.RPC.MethodCaller do
     rescue
       _ in FunctionClauseError ->
         {:error, :bad_arity}
+
       error ->
         {:error, error}
     end
   end
 
-
   # server impl
 
-  def init([name: name]) do
-    pid=self()
-    name = if name do name else inspect(self()) end
+  def init(name: name) do
+    pid = self()
+
+    name =
+      if name do
+        name
+      else
+        inspect(self())
+      end
+
     state = %{
       methods: %{
         "dir" => {
@@ -270,68 +276,76 @@ defmodule MOM.RPC.MethodCaller do
     {:ok, state}
   end
 
-
   def handle_call({:lookup, method}, _from, status) do
-    func = case Map.get(status.methods, method) do
-      nil ->
-        Enum.find_value(status.mc, &(lookup(&1, method)))
-      method ->
-        method
-    end
+    func =
+      case Map.get(status.methods, method) do
+        nil ->
+          Enum.find_value(status.mc, &lookup(&1, method))
+
+        method ->
+          method
+      end
 
     {:reply, func, status}
   end
 
   def handle_call({:dir, context}, _from, st) do
-    local = st.methods
+    local =
+      st.methods
       |> Enum.flat_map(fn {name, {_, options}} ->
-          if check_guards(%MOM.RPC.Request{ method: name, context: context}, options, st.guards) do
-            [name]
-          else
-            []
-          end
-        end)
-    other = Enum.flat_map( st.mc, fn mc ->
-      {:ok, res} = dir(mc, context)
-      res
-    end)
-    res = Enum.uniq Enum.sort( local ++ other )
+        if check_guards(%MOM.RPC.Request{method: name, context: context}, options, st.guards) do
+          [name]
+        else
+          []
+        end
+      end)
+
+    other =
+      Enum.flat_map(st.mc, fn mc ->
+        {:ok, res} = dir(mc, context)
+        res
+      end)
+
+    res = Enum.uniq(Enum.sort(local ++ other))
     {:reply, {:ok, res}, st}
   end
 
   def handle_call({:add_method, name, f, options}, _from, status) do
-    {:reply, :ok, %{ status |
-      methods: Map.put(status.methods, name, {f, options})
-    }}
+    {:reply, :ok, %{status | methods: Map.put(status.methods, name, {f, options})}}
   end
+
   def handle_call({:add_guard, name, guard_f}, _from, status) do
-    {:reply, :ok, %{ status |
-      guards: status.guards ++ [{name, guard_f}]
-    }}
+    {:reply, :ok, %{status | guards: status.guards ++ [{name, guard_f}]}}
   end
+
   def handle_call({:add_method_caller, nmc}, _from, status) do
-    {:reply, :ok, %{ status |
-      mc: [nmc | status.mc]
-    }}
+    {:reply, :ok, %{status | mc: [nmc | status.mc]}}
   end
 
   # Checks all the guards, return false if any fails.
   defp check_guards(%MOM.RPC.Request{}, _, []), do: true
+
   defp check_guards(%MOM.RPC.Request{} = msg, options, [{gname, gf} | rest]) do
     try do
       if gf.(msg, options) do
-        #Logger.debug("Guard #{inspect msg} #{inspect gname} allowed pass")
+        # Logger.debug("Guard #{inspect msg} #{inspect gname} allowed pass")
         check_guards(msg, options, rest)
       else
-        #Logger.debug("Guard #{inspect msg} #{inspect gname} STOPPED pass")
+        # Logger.debug("Guard #{inspect msg} #{inspect gname} STOPPED pass")
         false
       end
     rescue
       FunctionClauseError ->
-        #Logger.debug("Guard #{inspect msg} #{inspect gname} STOPPED pass (Function Clause Error)")
+        # Logger.debug("Guard #{inspect msg} #{inspect gname} STOPPED pass (Function Clause Error)")
         false
+
       e ->
-        Logger.error("Error checking method caller guard #{gname}: #{inspect e}\n#{Exception.format_stacktrace}")
+        Logger.error(
+          "Error checking method caller guard #{gname}: #{inspect(e)}\n#{
+            Exception.format_stacktrace()
+          }"
+        )
+
         false
     end
   end

@@ -20,7 +20,7 @@ defmodule MOM.Channel.Broadcast do
 
   Depending on how succesful was the `send` it returns different values:
 
-```
+  ```
   iex> alias MOM.{Channel, Message}
   iex> {:ok, ch} = Channel.Broadcast.start_link
   iex> Channel.send(ch, %Message{})
@@ -32,7 +32,7 @@ defmodule MOM.Channel.Broadcast do
   iex> Channel.send(ch, %Message{}, sync: true)
   :ok
 
-```
+  ```
 
   Channels can self-unsubscribe returning :unsubscribe from the
   called function.
@@ -54,7 +54,7 @@ defmodule MOM.Channel.Broadcast do
   iex> Agent.get(data, &(&1))
   1
 
-```
+  ```
   """
 
   def start_link(options \\ []) do
