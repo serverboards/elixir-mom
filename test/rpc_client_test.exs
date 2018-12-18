@@ -388,5 +388,102 @@ defmodule Serverboards.RPC.ClientTest do
     MOM.RPC.Client.set(client, "test", "test")
     res = MOM.RPC.Client.call(client, "get", "test")
     assert res == {:ok, "test"}
+
+    MOM.RPC.Client.set(client, "test", "gocha")
+
+    MOM.RPC.Client.add_method(
+      client,
+      "test",
+      fn ["get", what], context ->
+        MOM.RPC.Client.get(context, what)
+      end,
+      context: true
+    )
+
+    {:ok, jsreq} =
+      Poison.encode(%{
+        id: 1,
+        method: "test",
+        params: ["get", "test"]
+      })
+
+    res = MOM.RPC.Client.parse_line(client, jsreq)
+    last_line = MOM.RPC.Client.get(client, :last_line)
+    Logger.debug("Last line #{inspect(last_line)}")
+    {:ok, jsres} = Poison.decode(last_line)
+    assert jsres["result"] == "gocha"
+  end
+
+  def test_with_guards(args, context) do
+    Logger.debug("Called test with context #{inspect(context)}")
+    MOM.RPC.Client.update(context, :called, fn n -> n + 1 end)
+    args
+  end
+
+  def guard_perms(context, options) do
+    Logger.debug("Check guard for #{inspect(context)} / #{inspect(options[:perms])}")
+
+    # ensure all perms in required are in context
+    myperms = MOM.RPC.Client.get(context, :perms)
+
+    allow =
+      if myperms do
+        Enum.all?(options[:perms], fn p ->
+          Enum.member?(myperms, p)
+        end)
+      else
+        false
+      end
+
+    if allow do
+      true
+    else
+      :permission_denied
+    end
+  end
+
+  test "RPC Calls on client with guards" do
+    {:ok, client} = MOM.RPC.Client.start_link(writef: {__MODULE__, :writef_client_last_line, []})
+
+    MOM.RPC.Client.add_guard(client, {__MODULE__, :guard_perms, []})
+
+    MOM.RPC.Client.add_method(client, "test", {__MODULE__, :test_with_guards, []},
+      perms: ["a", "b"],
+      context: true
+    )
+
+    {:ok, jsreq} =
+      Poison.encode(%{
+        id: 1,
+        method: "test",
+        params: ["test"]
+      })
+
+    MOM.RPC.Client.set(client, :called, 0)
+    called = MOM.RPC.Client.get(client, :called)
+    assert called == 0
+
+    res = MOM.RPC.Client.parse_line(client, jsreq)
+    Logger.debug("test -> #{inspect(res)}")
+    last_line = MOM.RPC.Client.get(client, :last_line)
+    Logger.debug("Last line #{inspect(last_line)}")
+    called = MOM.RPC.Client.get(client, :called)
+    assert called == 0
+
+    MOM.RPC.Client.set(client, :perms, ["a", "b", "c"])
+    res = MOM.RPC.Client.parse_line(client, jsreq)
+    Logger.debug("test -> #{inspect(res)}")
+    last_line = MOM.RPC.Client.get(client, :last_line)
+    Logger.debug("Last line #{inspect(last_line)}")
+    called = MOM.RPC.Client.get(client, :called)
+    assert called == 1
+
+    MOM.RPC.Client.set(client, :perms, ["a", "c"])
+    res = MOM.RPC.Client.parse_line(client, jsreq)
+    Logger.debug("test -> #{inspect(res)}")
+    last_line = MOM.RPC.Client.get(client, :last_line)
+    Logger.debug("Last line #{inspect(last_line)}")
+    called = MOM.RPC.Client.get(client, :called)
+    assert called == 1
   end
 end

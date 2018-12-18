@@ -30,4 +30,8 @@ defmodule MOM.RPC.EndPoint.MethodCaller do
   def add_method_caller(mc, mc2) do
     MOM.RPC.MethodCaller.add_method_caller(mc, mc2)
   end
+
+  def add_guard(mc, guard) do
+    MOM.RPC.MethodCaller.add_guard(mc, guard)
+  end
 end

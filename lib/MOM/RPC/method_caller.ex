@@ -213,8 +213,8 @@ defmodule MOM.RPC.MethodCaller do
 
   In this example a map is used as context. Normally it would be a RPC.Context.
   """
-  def add_guard(pid, name, guard_f) when is_pid(pid) and is_function(guard_f) do
-    GenServer.call(pid, {:add_guard, name, guard_f})
+  def add_guard(pid, guard_f) when is_pid(pid) do
+    GenServer.call(pid, {:add_guard, guard_f})
   end
 
   def lookup(pid, method) do
@@ -226,24 +226,67 @@ defmodule MOM.RPC.MethodCaller do
       nil ->
         {:error, :unknown_method}
 
-      func_options ->
-        call(func_options, args, context)
+      func_options_guards ->
+        call(func_options_guards, args, context)
     end
   end
 
-  def call({func, options}, args, context) do
-    try do
-      if options[:context] do
-        func.(args, context)
-      else
-        func.(args)
-      end
-    rescue
-      _ in FunctionClauseError ->
-        {:error, :bad_arity}
+  def call({func, options, guards}, args, context) do
+    # Second part call the known funtion and options
+    # Logger.debug("Guards are #{inspect({func, options, guards})}")
 
-      error ->
-        {:error, error}
+    allow_func =
+      Enum.reduce(guards, true, fn
+        {mod, fun, args}, true ->
+          apply(mod, fun, args ++ [context, options])
+
+        _, other ->
+          other
+      end)
+
+    # Logger.debug("Allow func result is #{inspect(allow_func)}")
+
+    case allow_func do
+      true ->
+        try do
+          res =
+            if options[:context] do
+              case func do
+                f when is_function(f) ->
+                  func.(args, context)
+
+                {mod, func, args} ->
+                  apply(mod, func, args ++ [args, context])
+              end
+            else
+              case func do
+                f when is_function(f) ->
+                  func.(args)
+
+                {mod, func, args} ->
+                  apply(mod, func, args ++ [args])
+              end
+            end
+
+          case res do
+            {:error, _} -> res
+            {:ok, _} -> res
+            _ -> {:ok, res}
+          end
+        rescue
+          _ in FunctionClauseError ->
+            {:error, :bad_arity}
+
+          _ in UndefinedFunctionError ->
+            {:error, :bad_arity}
+
+          error ->
+            Logger.debug("#{inspect(error)}")
+            {:error, error}
+        end
+
+      other ->
+        {:error, other}
     end
   end
 
@@ -282,8 +325,8 @@ defmodule MOM.RPC.MethodCaller do
         nil ->
           Enum.find_value(status.mc, &lookup(&1, method))
 
-        method ->
-          method
+        {func, options} ->
+          {func, options, status.guards}
       end
 
     {:reply, func, status}
@@ -314,8 +357,8 @@ defmodule MOM.RPC.MethodCaller do
     {:reply, :ok, %{status | methods: Map.put(status.methods, name, {f, options})}}
   end
 
-  def handle_call({:add_guard, name, guard_f}, _from, status) do
-    {:reply, :ok, %{status | guards: status.guards ++ [{name, guard_f}]}}
+  def handle_call({:add_guard, guard_f}, _from, status) do
+    {:reply, :ok, %{status | guards: status.guards ++ [guard_f]}}
   end
 
   def handle_call({:add_method_caller, nmc}, _from, status) do

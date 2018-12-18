@@ -102,10 +102,42 @@ defmodule MOM.RPC.EndPoint.JSON do
 
   defp write_map({mod, fun, args}, map) do
     try do
-      {:ok, line} = Poison.encode(map)
+      line =
+        case Poison.encode(map) do
+          {:ok, line} ->
+            line
 
-      args = args ++ [line]
-      apply(mod, fun, args)
+          {:error, e} ->
+            Logger.error("Error encoding into JSON: #{inspect(e)}")
+
+            case map do
+              %MOM.RPC.Response{id: id} when not is_nil(id) ->
+                {:ok, line} =
+                  Poison.encode(%{
+                    id: map.id,
+                    error: "json_encoding"
+                  })
+
+                line
+
+              %MOM.RPC.Response.Error{id: id} when not is_nil(id) ->
+                {:ok, line} =
+                  Poison.encode(%{
+                    id: map.id,
+                    error: "json_encoding"
+                  })
+
+                line
+
+              _ ->
+                false
+            end
+        end
+
+      if line do
+        args = args ++ [line]
+        apply(mod, fun, args)
+      end
 
       :ok
     rescue

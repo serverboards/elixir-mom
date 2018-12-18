@@ -59,6 +59,14 @@ defmodule MOM.RPC.Client do
     GenServer.call(pid, {:set, what, value})
   end
 
+  def update(_pid, :caller, _value), do: raise("Cant update :caller")
+  def update(_pid, :json, _value), do: raise("Cant update :json")
+  def update(_pid, :mc, _value), do: raise("Cant update :mc")
+
+  def update(pid, what, how) do
+    GenServer.call(pid, {:update, what, how})
+  end
+
   def call(pid, method, args, timeout \\ 60_000) do
     caller = get(pid, :caller)
     MOM.RPC.EndPoint.Caller.call(caller, method, args, timeout)
@@ -79,9 +87,14 @@ defmodule MOM.RPC.Client do
     MOM.RPC.EndPoint.MethodCaller.add_method_caller(mc, mc2)
   end
 
+  def add_guard(pid, guard) do
+    mc = get(pid, :mc)
+    MOM.RPC.EndPoint.MethodCaller.add_guard(mc, guard)
+  end
+
   def parse_line(pid, line) do
     json = get(pid, :json)
-    MOM.RPC.EndPoint.JSON.parse_line(json, line)
+    MOM.RPC.EndPoint.JSON.parse_line(json, line, pid)
   end
 
   def tap(pid) do
@@ -140,6 +153,10 @@ defmodule MOM.RPC.Client do
 
   def handle_call({:set, something, value}, _from, status) do
     {:reply, :ok, Map.put(status, something, value)}
+  end
+
+  def handle_call({:update, something, how}, _from, status) do
+    {:reply, :ok, Map.put(status, something, how.(status[something]))}
   end
 
   def terminate(reason, state) do

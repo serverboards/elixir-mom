@@ -31,12 +31,12 @@ defmodule Serverboards.MethodCallerTest do
     Logger.debug("All methods #{inspect(dir)}")
 
     res = RPC.MethodCaller.call(mc, "echo", ["test"], context)
-    assert res == ["test"]
+    assert res == {:ok, ["test"]}
 
     res = RPC.MethodCaller.call(mc, "tac", "tset", context)
-    assert res == "test"
+    assert res == {:ok, "test"}
 
-    res = RPC.MethodCaller.call(mc, "same_pid", [], context)
+    {:ok, res} = RPC.MethodCaller.call(mc, "same_pid", [], context)
     assert res
   end
 
@@ -69,11 +69,11 @@ defmodule Serverboards.MethodCallerTest do
     dir = RPC.MethodCaller.dir(mc, context)
     Logger.debug("All methods #{inspect(dir)}")
 
-    assert call(mc, "echo", "Hello world", context) == "Hello world"
-    assert call(mc, "tac", "Hello world", context) == "dlrow olleH"
-    assert call(mc, "get_context", [], context) == context
-    assert call(mc, "echo2", "Hello world", context) == "Hello world"
-    assert call(mc, "echo3", "Hello world", context) == "Hello world"
+    assert call(mc, "echo", "Hello world", context) == {:ok, "Hello world"}
+    assert call(mc, "tac", "Hello world", context) == {:ok, "dlrow olleH"}
+    assert call(mc, "get_context", [], context) == {:ok, context}
+    assert call(mc, "echo2", "Hello world", context) == {:ok, "Hello world"}
+    assert call(mc, "echo3", "Hello world", context) == {:ok, "Hello world"}
     assert call(mc, "echo4", "Hello world", context) == {:error, :unknown_method}
   end
 
@@ -94,9 +94,9 @@ defmodule Serverboards.MethodCallerTest do
       context: true
     )
 
-    assert call(mc, "echo", "Hello world", context) == "Hello world"
+    assert call(mc, "echo", "Hello world", context) == {:ok, "Hello world"}
     {:error, _} = call(mc, "tac", "Hello world", context)
-    assert call(mc, "get_context", [], context) == context
+    assert call(mc, "get_context", [], context) == {:ok, context}
     {:error, _} = call(mc, "echo_mc", "Hello world", context)
     assert call(mc, "echo_mc3", "Hello world", context) == {:error, :unknown_method}
   end
@@ -251,5 +251,60 @@ defmodule Serverboards.MethodCallerTest do
 
     assert tbig / tsmall < 10,
            "Tbig sould not be more than 10 times slower than tsmall (Its #{tbig / tsmall})"
+  end
+
+  def guard_perms(:kipple, context, options) do
+    Logger.debug("Check guard for #{inspect(context)} / #{inspect(options[:perms])}")
+
+    # ensure all perms in required are in context
+    allow =
+      Enum.all?(options[:perms], fn p ->
+        Enum.member?(context.perms, p)
+      end)
+
+    if allow do
+      true
+    else
+      :permission_denied
+    end
+  end
+
+  def echo(args, context) do
+    Logger.debug("Echo #{inspect(args)} #{inspect(context)}")
+    Agent.update(context.ncalls, fn n -> n + 1 end)
+    args
+  end
+
+  test "Guards and context" do
+    {:ok, mc} = MOM.RPC.MethodCaller.start_link()
+    {:ok, ncalls} = Agent.start_link(fn -> 0 end)
+
+    MOM.RPC.MethodCaller.add_guard(
+      mc,
+      {__MODULE__, :guard_perms, [:kipple]}
+    )
+
+    MOM.RPC.MethodCaller.add_method(mc, "test", &echo/2, perms: ["a"], context: true)
+
+    res = MOM.RPC.MethodCaller.call(mc, "test", ["test"], %{perms: ["a", "b"], ncalls: ncalls})
+    Logger.debug("res #{inspect(res)}")
+
+    assert Agent.get(ncalls, & &1) == 1
+    assert res == {:ok, ["test"]}
+
+    MOM.RPC.MethodCaller.add_method(
+      mc,
+      "test2",
+      fn args ->
+        echo(args, %{ncalls: ncalls})
+      end,
+      perms: ["a"]
+    )
+
+    res = MOM.RPC.MethodCaller.call(mc, "test2", ["test"], %{perms: ["b"], ncalls: ncalls})
+    Logger.debug("res #{inspect(res)}")
+
+    assert Agent.get(ncalls, & &1) == 1
+    assert res == {:error, :permission_denied}
   end
 end
