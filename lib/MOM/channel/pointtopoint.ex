@@ -91,6 +91,7 @@ defmodule MOM.Channel.PointToPoint do
       :ets.foldl(
         fn
           {_id, {func, _opts, _ref}}, :cont ->
+            # Logger.debug("Dispatch #{inspect(func)}")
             MOM.Channel.dispatch_one(func, message)
 
           _, :stop ->
@@ -100,6 +101,7 @@ defmodule MOM.Channel.PointToPoint do
         table
       )
 
+    # Logger.debug("Return default #{inspect(table)}")
     # If not processed, and have a default behaviour, use it. Returns the proper :stop | :cont
     if res == :cont do
       case ptp_options[:default] do

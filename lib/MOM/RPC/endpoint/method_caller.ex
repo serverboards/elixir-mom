@@ -1,8 +1,6 @@
 require Logger
 
 defmodule MOM.RPC.EndPoint.MethodCaller do
-  use GenServer
-
   def start_link(endpoint, options \\ []) do
     {:ok, mc} = MOM.RPC.MethodCaller.start_link(options)
 

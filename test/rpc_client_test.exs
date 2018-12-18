@@ -247,4 +247,60 @@ defmodule Serverboards.RPC.ClientTest do
 
     assert pre_count == post_count, "Some processes were leaked"
   end
+
+  @tag timeout: 10_000
+  test "Use Client" do
+    {:ok, context} = Agent.start_link(fn -> nil end)
+
+    {:ok, client} =
+      MOM.RPC.Client.start_link(
+        writef: fn line ->
+          Logger.debug("Read>> #{line}")
+          Agent.update(context, fn _ -> line end)
+        end
+      )
+
+    # calls go and are answered by JSON
+    task =
+      Task.async(fn ->
+        res = MOM.RPC.Client.call(client, "dir", [])
+      end)
+
+    :timer.sleep(20)
+    last_line = Agent.get(context, & &1)
+    Logger.debug("#{inspect(last_line)}")
+    {:ok, js} = Poison.decode(last_line)
+    assert js["method"] == "dir"
+    assert js["params"] == []
+
+    {:ok, jsres} =
+      Poison.encode(%{
+        id: js["id"],
+        result: ["dir"]
+      })
+
+    MOM.RPC.Client.parse_line(client, jsres)
+    res = Task.await(task)
+    assert res == {:ok, ["dir"]}
+
+    # Calls from JSON go to method caller
+    MOM.RPC.Client.add_method(client, "hello", fn [arg1] ->
+      "Hello #{arg1}!"
+    end)
+
+    {:ok, jsreq} =
+      Poison.encode(%{
+        id: 111,
+        method: "hello",
+        params: ["world"]
+      })
+
+    MOM.RPC.Client.parse_line(client, jsreq)
+    :timer.sleep(20)
+    last_line = Agent.get(context, & &1)
+    Logger.debug("#{inspect(last_line)}")
+    {:ok, js} = Poison.decode(last_line)
+    assert js["id"] == 111
+    assert js["result"] == "Hello world!"
+  end
 end

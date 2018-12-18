@@ -34,6 +34,16 @@ defmodule MOM.RPC.EndPoint do
   end
 
   @doc ~S"""
+  Reverses the channels so that the input is the output of another endpoint
+  """
+  def reverse(endpoint) do
+    %MOM.RPC.EndPoint{
+      in: endpoint.out,
+      out: endpoint.in
+    }
+  end
+
+  @doc ~S"""
     Creates a pair of connected endpoints.
 
     Sets the out of each side to in of the other.
@@ -46,24 +56,54 @@ defmodule MOM.RPC.EndPoint do
     new_endpoint_type(b)` or `new() + new() + new_endpoint_type(a) +
     new_endpoint_type(b) + connect()`` The final result is the same.
 
+    It is actually just a normal Endpoint, and its reverse
+
   """
   @spec pair() :: {%MOM.RPC.EndPoint{}, %MOM.RPC.EndPoint{}}
   def pair() do
-    {:ok, outA} = MOM.Channel.PointToPoint.start_link(default: &MOM.RPC.EndPoint.unknown_method/2)
-    {:ok, outB} = MOM.Channel.PointToPoint.start_link(default: &MOM.RPC.EndPoint.unknown_method/2)
+    ep = new()
 
     {
-      %MOM.RPC.EndPoint{
-        out: outB,
-        in: outA
-      },
-      %MOM.RPC.EndPoint{
-        out: outA,
-        in: outB
-      }
+      ep,
+      reverse(ep)
     }
   end
 
+  # @doc ~S"""
+  # Creates three endpoints so that the middle one is connected to both sides
+  #
+  # And input to middle on is the same, and output goes to the third:
+  #
+  # ```
+  # A | --> | B | --> | C
+  # ```
+  #
+  # This is required by the client connection.
+  #
+  # Normally A could not get responses, but the messages carry a `reply` field
+  # just for that.
+  # """
+  # def three() do
+  #   {:ok, inA} = MOM.Channel.PointToPoint.start_link(default: &MOM.RPC.EndPoint.unknown_method/2)
+  #   {:ok, inB} = MOM.Channel.PointToPoint.start_link(default: &MOM.RPC.EndPoint.unknown_method/2)
+  #   {:ok, inC} = MOM.Channel.PointToPoint.start_link(default: &MOM.RPC.EndPoint.unknown_method/2)
+  #
+  #   {
+  #     %MOM.RPC.EndPoint{
+  #       in: inA,
+  #       out: inB
+  #     },
+  #     %MOM.RPC.EndPoint{
+  #       in: inB,
+  #       out: inC
+  #     },
+  #     %MOM.RPC.EndPoint{
+  #       in: inC,
+  #       out: inB
+  #     }
+  #   }
+  # end
+  #
   @doc ~S"""
     Connects the two endpoints.
   """
@@ -92,7 +132,7 @@ defmodule MOM.RPC.EndPoint do
       fn
         %MOM.RPC.Request{} = msg ->
           mcres = infunc.(msg)
-          Logger.debug("In f #{inspect(infunc)} #{inspect(msg)} -> #{inspect(mcres)}")
+          # Logger.debug("infunc  #{inspect(infunc)} ( #{inspect(msg)} ) -> #{inspect(mcres)}")
 
           cont_or_stop =
             case mcres do
@@ -157,8 +197,8 @@ defmodule MOM.RPC.EndPoint do
     end
   end
 
-  def tap(endpoint) do
-    MOM.Tap.tap(endpoint.in, "A -> B")
-    MOM.Tap.tap(endpoint.out, "B -> A")
+  def tap(endpoint, idA \\ "A", idB \\ "B") do
+    MOM.Tap.tap(endpoint.in, "#{idA} -> #{idB}")
+    MOM.Tap.tap(endpoint.out, "#{idB} -> #{idA}")
   end
 end
