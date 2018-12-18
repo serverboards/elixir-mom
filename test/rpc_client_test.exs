@@ -18,14 +18,17 @@ defmodule Serverboards.RPC.ClientTest do
     MOM.RPC.EndPoint.stop(ep1)
   end
 
+  def writef_last_line(context, line) do
+    Logger.debug("Read>> #{line}")
+    Agent.update(context, fn _ -> line end)
+  end
+
   test "Good protocol" do
     {:ok, context} = Agent.start_link(fn -> nil end)
     {ep1, ep2} = MOM.RPC.EndPoint.pair()
 
     {:ok, json} =
-      MOM.RPC.EndPoint.JSON.start_link(ep1, fn line ->
-        Agent.update(context, fn _ -> line end)
-      end)
+      MOM.RPC.EndPoint.JSON.start_link(ep1, {__MODULE__, :writef_last_line, [context]})
 
     {:ok, _mcall} = MOM.RPC.EndPoint.MethodCaller.start_link(ep2)
     MOM.RPC.EndPoint.tap(ep1)
@@ -50,10 +53,7 @@ defmodule Serverboards.RPC.ClientTest do
     MOM.RPC.EndPoint.tap(ep1)
 
     {:ok, json} =
-      MOM.RPC.EndPoint.JSON.start_link(ep1, fn line ->
-        Logger.debug("Read>> #{line}")
-        Agent.update(context, fn _ -> line end)
-      end)
+      MOM.RPC.EndPoint.JSON.start_link(ep1, {__MODULE__, :writef_last_line, [context]})
 
     {:ok, caller} = MOM.RPC.EndPoint.Caller.start_link(ep2)
 
@@ -100,9 +100,7 @@ defmodule Serverboards.RPC.ClientTest do
     {ep1, ep2} = MOM.RPC.EndPoint.pair()
 
     {:ok, json} =
-      MOM.RPC.EndPoint.JSON.start_link(ep1, fn line ->
-        Agent.update(context, fn _ -> line end)
-      end)
+      MOM.RPC.EndPoint.JSON.start_link(ep1, {__MODULE__, :writef_last_line, [context]})
 
     {:ok, caller} = MOM.RPC.EndPoint.Caller.start_link(ep2)
     MOM.RPC.EndPoint.tap(ep1)
@@ -134,10 +132,7 @@ defmodule Serverboards.RPC.ClientTest do
     MOM.RPC.EndPoint.tap(ep1)
 
     {:ok, json} =
-      MOM.RPC.EndPoint.JSON.start_link(ep1, fn line ->
-        Logger.debug("Read>> #{line}")
-        Agent.update(context, fn _ -> line end)
-      end)
+      MOM.RPC.EndPoint.JSON.start_link(ep1, {__MODULE__, :writef_last_line, [context]})
 
     {:ok, mc} = MOM.RPC.EndPoint.MethodCaller.start_link(ep2)
 
@@ -161,10 +156,7 @@ defmodule Serverboards.RPC.ClientTest do
     MOM.RPC.EndPoint.tap(ep1)
 
     {:ok, json} =
-      MOM.RPC.EndPoint.JSON.start_link(ep1, fn line ->
-        Logger.debug("Read>> #{line}")
-        Agent.update(context, fn _ -> line end)
-      end)
+      MOM.RPC.EndPoint.JSON.start_link(ep1, {__MODULE__, :writef_last_line, [context]})
 
     {:ok, mc} = MOM.RPC.EndPoint.MethodCaller.start_link(ep2)
 
@@ -205,28 +197,15 @@ defmodule Serverboards.RPC.ClientTest do
     pre_proc = :erlang.processes()
     pre_count = Enum.count(pre_proc)
 
-    {:ok, context} = Agent.start_link(fn -> nil end)
-    {ep1, ep2} = MOM.RPC.EndPoint.pair()
-    MOM.RPC.EndPoint.tap(ep1)
+    {:ok, client} = MOM.RPC.Client.start_link(writef: {__MODULE__, :writef_last_line, []})
 
-    {:ok, json} =
-      MOM.RPC.EndPoint.JSON.start_link(ep1, fn line ->
-        Logger.debug("Read>> #{line}")
-        Agent.update(context, fn _ -> line end)
-      end)
-
-    {:ok, mc} = MOM.RPC.EndPoint.MethodCaller.start_link(ep2)
-
-    MOM.RPC.EndPoint.MethodCaller.add_method(mc, "echo", & &1)
+    MOM.RPC.Client.add_method(client, "echo", & &1)
     # :timer.sleep(300) # settle time?
 
     mid_proc = :erlang.processes()
     mid_count = Enum.count(mid_proc)
 
-    MOM.RPC.EndPoint.stop(ep1)
-    MOM.RPC.EndPoint.MethodCaller.stop(mc)
-    MOM.RPC.EndPoint.JSON.stop(json)
-    Agent.stop(context)
+    MOM.RPC.Client.stop(client)
     # :timer.sleep(300)
 
     post_proc = :erlang.processes()
@@ -248,17 +227,14 @@ defmodule Serverboards.RPC.ClientTest do
     assert pre_count == post_count, "Some processes were leaked"
   end
 
+  def writef_client_last_line(client, line) do
+    Logger.debug("Read>> #{line}")
+    MOM.RPC.Client.set(client, :last_line, line)
+  end
+
   @tag timeout: 10_000
   test "Use Client" do
-    {:ok, context} = Agent.start_link(fn -> nil end)
-
-    {:ok, client} =
-      MOM.RPC.Client.start_link(
-        writef: fn line ->
-          Logger.debug("Read>> #{line}")
-          Agent.update(context, fn _ -> line end)
-        end
-      )
+    {:ok, client} = MOM.RPC.Client.start_link(writef: {__MODULE__, :writef_client_last_line, []})
 
     # calls go and are answered by JSON
     task =
@@ -267,7 +243,7 @@ defmodule Serverboards.RPC.ClientTest do
       end)
 
     :timer.sleep(20)
-    last_line = Agent.get(context, & &1)
+    last_line = MOM.RPC.Client.get(client, :last_line)
     Logger.debug("#{inspect(last_line)}")
     {:ok, js} = Poison.decode(last_line)
     assert js["method"] == "dir"
@@ -297,33 +273,28 @@ defmodule Serverboards.RPC.ClientTest do
 
     MOM.RPC.Client.parse_line(client, jsreq)
     :timer.sleep(20)
-    last_line = Agent.get(context, & &1)
+    last_line = MOM.RPC.Client.get(client, :last_line)
     Logger.debug("#{inspect(last_line)}")
     {:ok, js} = Poison.decode(last_line)
     assert js["id"] == 111
     assert js["result"] == "Hello world!"
   end
 
+  def writef_benckmark_caller_json(client, line) do
+    {:ok, js} = Poison.decode(line)
+
+    {:ok, res} =
+      Poison.encode(%{
+        id: js["id"],
+        result: js["params"]
+      })
+
+    MOM.RPC.Client.parse_line(client, res)
+  end
+
   test "Benchmark Caller -> JSON" do
-    {:ok, context} = Agent.start_link(fn -> nil end)
-
     {:ok, client} =
-      MOM.RPC.Client.start_link(
-        writef: fn line ->
-          {:ok, js} = Poison.decode(line)
-
-          {:ok, res} =
-            Poison.encode(%{
-              id: js["id"],
-              result: js["params"]
-            })
-
-          client = Agent.get(context, & &1)
-          MOM.RPC.Client.parse_line(client, res)
-        end
-      )
-
-    Agent.update(context, fn _ -> client end)
+      MOM.RPC.Client.start_link(writef: {__MODULE__, :writef_benckmark_caller_json, []})
 
     ncalls = 10_000
 
@@ -336,6 +307,16 @@ defmodule Serverboards.RPC.ClientTest do
 
     IO.puts("Caller -> RPC #{ncalls} calls in #{time}s | #{ncalls / time} calls/s")
     MOM.RPC.Client.stop(client)
+  end
+
+  def writef_benchmark_json_mc(context, ncalls, task, _client, line) do
+    {:ok, js} = Poison.decode(line)
+    assert js["result"] == ["echo"]
+    n = Agent.get_and_update(context, &{&1 + 1, &1 + 1})
+
+    if n == ncalls do
+      send(task.pid, :ok)
+    end
   end
 
   test "Benchmark JSON -> MethodCaller" do
@@ -352,17 +333,7 @@ defmodule Serverboards.RPC.ClientTest do
 
     {:ok, client} =
       MOM.RPC.Client.start_link(
-        writef: fn line ->
-          {:ok, js} = Poison.decode(line)
-          assert js["result"] == ["echo"]
-          n = Agent.get_and_update(context, &{&1 + 1, &1 + 1})
-
-          if n == ncalls do
-            send(task.pid, :ok)
-          end
-
-          :stop
-        end
+        writef: {__MODULE__, :writef_benchmark_json_mc, [context, ncalls, task]}
       )
 
     MOM.RPC.Client.add_method(client, "echo", & &1)
@@ -385,5 +356,35 @@ defmodule Serverboards.RPC.ClientTest do
 
     IO.puts("RPC -> MethodCaller #{ncalls} calls in #{time}s | #{ncalls / time} calls/s")
     MOM.RPC.Client.stop(client)
+  end
+
+  def writef_context_holders(client, line) do
+    Logger.debug("Got line #{inspect(client)}, #{inspect(line)}")
+    MOM.RPC.Client.set(client, :last_line, line)
+    {:ok, js} = Poison.decode(line)
+
+    if js["method"] != nil and js["id"] != nil do
+      Logger.debug("Answer #{inspect(js)}")
+
+      {:ok, jsres} =
+        Poison.encode(%{id: js["id"], result: MOM.RPC.Client.get(client, js["params"])})
+
+      MOM.RPC.Client.parse_line(client, jsres)
+    end
+  end
+
+  @tag timeout: 1000
+  test "Clients are the context holders" do
+    {:ok, client} = MOM.RPC.Client.start_link(writef: {__MODULE__, :writef_context_holders, []})
+    MOM.RPC.Client.tap(client)
+
+    # no data yet
+    res = MOM.RPC.Client.call(client, "get", "test")
+    assert res == {:ok, nil}
+
+    # set data, just get it
+    MOM.RPC.Client.set(client, "test", "test")
+    res = MOM.RPC.Client.call(client, "get", "test")
+    assert res == {:ok, "test"}
   end
 end

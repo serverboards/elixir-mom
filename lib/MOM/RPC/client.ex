@@ -1,3 +1,5 @@
+require Logger
+
 defmodule MOM.RPC.Client do
   use GenServer
 
@@ -39,8 +41,22 @@ defmodule MOM.RPC.Client do
     GenServer.stop(pid, reason)
   end
 
-  def get(pid, what) do
-    GenServer.call(pid, {:get, what})
+  def get(pid, what, defval \\ nil) do
+    case GenServer.call(pid, {:get, what}) do
+      nil ->
+        defval
+
+      val ->
+        val
+    end
+  end
+
+  def set(_pid, :caller, _value), do: raise("Cant set :caller")
+  def set(_pid, :json, _value), do: raise("Cant set :json")
+  def set(_pid, :mc, _value), do: raise("Cant set :mc")
+
+  def set(pid, what, value) do
+    GenServer.call(pid, {:set, what, value})
   end
 
   def call(pid, method, args, timeout \\ 60_000) do
@@ -68,6 +84,13 @@ defmodule MOM.RPC.Client do
     MOM.RPC.EndPoint.JSON.parse_line(json, line)
   end
 
+  def tap(pid) do
+    [ep1, ep2] = get(pid, [:ep1, :ep2])
+    Logger.debug("Tap #{inspect({pid, ep1, ep2})}")
+    MOM.RPC.EndPoint.tap(ep1, "JSONa", "Caller")
+    MOM.RPC.EndPoint.tap(ep2, "JSONb", "MethodCaller")
+  end
+
   # server impl
   def init(options) do
     # caller <->>> RPC
@@ -79,12 +102,13 @@ defmodule MOM.RPC.Client do
       out: ep2.in
     }
 
-    # MOM.RPC.EndPoint.tap(ep1, "JSONa", "Caller")
-    # MOM.RPC.EndPoint.tap(ep2, "JSONb", "MethodCaller")
-
     {:ok, caller} = MOM.RPC.EndPoint.Caller.start_link(ep1)
 
-    {:ok, json} = MOM.RPC.EndPoint.JSON.start_link(ep12, options[:writef])
+    {mod, fun, args} = options[:writef]
+
+    args = args ++ [self()]
+
+    {:ok, json} = MOM.RPC.EndPoint.JSON.start_link(ep12, {mod, fun, args})
 
     # I can not call anybody
     {:ok, mc} = MOM.RPC.EndPoint.MethodCaller.start_link(ep2)
@@ -93,11 +117,26 @@ defmodule MOM.RPC.Client do
      %{
        mc: mc,
        caller: caller,
-       json: json
+       json: json,
+       ep1: ep1,
+       ep2: ep2
      }}
+  end
+
+  def handle_call({:get, somethings}, _from, status) when is_list(somethings) do
+    ret =
+      for i <- somethings do
+        status[i]
+      end
+
+    {:reply, ret, status}
   end
 
   def handle_call({:get, something}, _from, status) do
     {:reply, status[something], status}
+  end
+
+  def handle_call({:set, something, value}, _from, status) do
+    {:reply, :ok, Map.put(status, something, value)}
   end
 end

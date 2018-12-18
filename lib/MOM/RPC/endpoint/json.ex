@@ -100,10 +100,13 @@ defmodule MOM.RPC.EndPoint.JSON do
     end
   end
 
-  defp write_map(writef, map) do
+  defp write_map({mod, fun, args}, map) do
     try do
       {:ok, line} = Poison.encode(map)
-      writef.(line <> "\n")
+
+      args = args ++ [line]
+      apply(mod, fun, args)
+
       :ok
     rescue
       e in MatchError ->
