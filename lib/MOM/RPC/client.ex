@@ -113,6 +113,8 @@ defmodule MOM.RPC.Client do
     # I can not call anybody
     {:ok, mc} = MOM.RPC.EndPoint.MethodCaller.start_link(ep2)
 
+    :erlang.process_flag(:trap_exit, true)
+
     {:ok,
      %{
        mc: mc,
@@ -138,5 +140,13 @@ defmodule MOM.RPC.Client do
 
   def handle_call({:set, something, value}, _from, status) do
     {:reply, :ok, Map.put(status, something, value)}
+  end
+
+  def terminate(reason, state) do
+    MOM.RPC.EndPoint.stop(state.ep1, reason)
+    MOM.RPC.EndPoint.stop(state.ep2, reason)
+    MOM.RPC.EndPoint.MethodCaller.stop(state.mc, reason)
+    MOM.RPC.EndPoint.JSON.stop(state.json, reason)
+    MOM.RPC.EndPoint.Caller.stop(state.caller, reason)
   end
 end

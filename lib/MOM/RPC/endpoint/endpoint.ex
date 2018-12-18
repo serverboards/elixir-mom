@@ -28,9 +28,9 @@ defmodule MOM.RPC.EndPoint do
     }
   end
 
-  def stop(ep) do
-    MOM.Channel.stop(ep.in)
-    MOM.Channel.stop(ep.out)
+  def stop(ep, reason \\ :normal) do
+    MOM.Channel.stop(ep.in, reason)
+    MOM.Channel.stop(ep.out, reason)
   end
 
   @doc ~S"""

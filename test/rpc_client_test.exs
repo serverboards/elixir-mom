@@ -194,6 +194,8 @@ defmodule Serverboards.RPC.ClientTest do
   end
 
   test "No process leaking" do
+    # settle process destruction if needed.
+    :timer.sleep(30)
     pre_proc = :erlang.processes()
     pre_count = Enum.count(pre_proc)
 
