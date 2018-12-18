@@ -263,7 +263,7 @@ defmodule Serverboards.RPC.ClientTest do
     # calls go and are answered by JSON
     task =
       Task.async(fn ->
-        res = MOM.RPC.Client.call(client, "dir", [])
+        MOM.RPC.Client.call(client, "dir", [])
       end)
 
     :timer.sleep(20)
@@ -302,5 +302,88 @@ defmodule Serverboards.RPC.ClientTest do
     {:ok, js} = Poison.decode(last_line)
     assert js["id"] == 111
     assert js["result"] == "Hello world!"
+  end
+
+  test "Benchmark Caller -> JSON" do
+    {:ok, context} = Agent.start_link(fn -> nil end)
+
+    {:ok, client} =
+      MOM.RPC.Client.start_link(
+        writef: fn line ->
+          {:ok, js} = Poison.decode(line)
+
+          {:ok, res} =
+            Poison.encode(%{
+              id: js["id"],
+              result: js["params"]
+            })
+
+          client = Agent.get(context, & &1)
+          MOM.RPC.Client.parse_line(client, res)
+        end
+      )
+
+    Agent.update(context, fn _ -> client end)
+
+    ncalls = 10_000
+
+    {_res, time} =
+      MOM.Test.benchmark(fn ->
+        Enum.reduce(0..ncalls, nil, fn _acc, _v ->
+          assert MOM.RPC.Client.call(client, "echo", ["echo"]) == {:ok, ["echo"]}
+        end)
+      end)
+
+    IO.puts("Caller -> RPC #{ncalls} calls in #{time}s | #{ncalls / time} calls/s")
+    MOM.RPC.Client.stop(client)
+  end
+
+  test "Benchmark JSON -> MethodCaller" do
+    {:ok, context} = Agent.start_link(fn -> 0 end)
+
+    task =
+      Task.async(fn ->
+        receive do
+          _ -> :ok
+        end
+      end)
+
+    ncalls = 100_000
+
+    {:ok, client} =
+      MOM.RPC.Client.start_link(
+        writef: fn line ->
+          {:ok, js} = Poison.decode(line)
+          assert js["result"] == ["echo"]
+          n = Agent.get_and_update(context, &{&1 + 1, &1 + 1})
+
+          if n == ncalls do
+            send(task.pid, :ok)
+          end
+
+          :stop
+        end
+      )
+
+    MOM.RPC.Client.add_method(client, "echo", & &1)
+
+    {_res, time} =
+      MOM.Test.benchmark(fn ->
+        Enum.reduce(0..ncalls, nil, fn _acc, n ->
+          {:ok, line} =
+            Poison.encode(%{
+              id: n,
+              method: "echo",
+              params: ["echo"]
+            })
+
+          assert MOM.RPC.Client.parse_line(client, line)
+        end)
+
+        Task.await(task)
+      end)
+
+    IO.puts("RPC -> MethodCaller #{ncalls} calls in #{time}s | #{ncalls / time} calls/s")
+    MOM.RPC.Client.stop(client)
   end
 end

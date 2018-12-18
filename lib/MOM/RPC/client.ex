@@ -79,8 +79,8 @@ defmodule MOM.RPC.Client do
       out: ep2.in
     }
 
-    MOM.RPC.EndPoint.tap(ep1, "JSONa", "Caller")
-    MOM.RPC.EndPoint.tap(ep2, "JSONb", "MethodCaller")
+    # MOM.RPC.EndPoint.tap(ep1, "JSONa", "Caller")
+    # MOM.RPC.EndPoint.tap(ep2, "JSONb", "MethodCaller")
 
     {:ok, caller} = MOM.RPC.EndPoint.Caller.start_link(ep1)
 
