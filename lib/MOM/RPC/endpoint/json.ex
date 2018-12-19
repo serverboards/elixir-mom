@@ -42,6 +42,8 @@ defmodule MOM.RPC.EndPoint.JSON do
   This is called from the user of this endpoint, not at MOM, for example from
   the WebSockets implementation.
 
+  The line is a IO list.
+
   Returns:
 
   * :ok -- parsed and in processing
@@ -54,7 +56,7 @@ defmodule MOM.RPC.EndPoint.JSON do
 
       line ->
         res =
-          case Poison.decode(line) do
+          case Poison.Parser.parse(line) do
             # these two are from the JSON side to the other side
             {:ok, %{"method" => method, "params" => params, "id" => id}} ->
               {in_, out} = GenServer.call(client, {:get_inout})
@@ -102,8 +104,17 @@ defmodule MOM.RPC.EndPoint.JSON do
 
   defp write_map({mod, fun, args}, map) do
     try do
+      # I use the Poison.Encode as it returns a IO list, which will be faster on IO
       line =
-        case Poison.encode(map) do
+        try do
+          {:ok, Poison.Encoder.encode(map, [])}
+        rescue
+          e in Poison.EncodeError ->
+            {:error, e}
+        end
+
+      line =
+        case line do
           {:ok, line} ->
             line
 
@@ -133,6 +144,8 @@ defmodule MOM.RPC.EndPoint.JSON do
                 false
             end
         end
+
+      line = [line, "\n"]
 
       if line do
         args = args ++ [line]
