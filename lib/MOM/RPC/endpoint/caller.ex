@@ -63,12 +63,18 @@ defmodule MOM.RPC.EndPoint.Caller do
   def event(client, method, params) do
     out = GenServer.call(client, {:get_out})
 
-    MOM.Channel.send(out, %MOM.RPC.Request{
-      id: nil,
-      method: method,
-      params: params,
-      context: nil
-    })
+    MOM.Channel.send(
+      out,
+      %MOM.RPC.Request{
+        id: nil,
+        method: method,
+        params: params,
+        context: nil
+      },
+      async: true
+    )
+
+    :ok
   end
 
   # server impl

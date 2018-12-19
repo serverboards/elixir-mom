@@ -407,7 +407,8 @@ defmodule Serverboards.RPC.ClientTest do
         params: ["get", "test"]
       })
 
-    res = MOM.RPC.Client.parse_line(client, jsreq)
+    MOM.RPC.Client.parse_line(client, jsreq)
+    :timer.sleep(30)
     last_line = MOM.RPC.Client.get(client, :last_line)
     Logger.debug("Last line #{inspect(last_line)}")
     {:ok, jsres} = Poison.decode(last_line)
@@ -464,6 +465,7 @@ defmodule Serverboards.RPC.ClientTest do
     assert called == 0
 
     res = MOM.RPC.Client.parse_line(client, jsreq)
+    :timer.sleep(30)
     Logger.debug("test -> #{inspect(res)}")
     last_line = MOM.RPC.Client.get(client, :last_line)
     Logger.debug("Last line #{inspect(last_line)}")
@@ -472,6 +474,7 @@ defmodule Serverboards.RPC.ClientTest do
 
     MOM.RPC.Client.set(client, :perms, ["a", "b", "c"])
     res = MOM.RPC.Client.parse_line(client, jsreq)
+    :timer.sleep(30)
     Logger.debug("test -> #{inspect(res)}")
     last_line = MOM.RPC.Client.get(client, :last_line)
     Logger.debug("Last line #{inspect(last_line)}")
@@ -480,6 +483,7 @@ defmodule Serverboards.RPC.ClientTest do
 
     MOM.RPC.Client.set(client, :perms, ["a", "c"])
     res = MOM.RPC.Client.parse_line(client, jsreq)
+    :timer.sleep(30)
     Logger.debug("test -> #{inspect(res)}")
     last_line = MOM.RPC.Client.get(client, :last_line)
     Logger.debug("Last line #{inspect(last_line)}")
@@ -536,5 +540,94 @@ defmodule Serverboards.RPC.ClientTest do
 
     res = MOM.RPC.Client.call(client, "error", :exit2)
     assert res == {:error, "exit2"}
+  end
+
+  def writef_sleep_echo(client, line) do
+    {:ok, msg} = Poison.decode(line)
+    Logger.debug("#{inspect(self())}Got message #{to_string(line)}")
+
+    case msg do
+      %{"method" => "echo", "id" => id, "params" => [sleept, ret, pid]} ->
+        :timer.sleep(sleept)
+        MOM.RPC.Client.update(client, :count, fn count -> count + 1 end)
+
+        if id do
+          assert pid == inspect(self())
+
+          {:ok, jsres} =
+            Poison.encode(%{
+              id: id,
+              result: ret
+            })
+
+          MOM.RPC.Client.parse_line(client, jsres)
+        end
+
+      %{"result" => "ok"} ->
+        n = MOM.RPC.Client.update(client, :count, fn count -> count + 1 end)
+        Logger.debug("Solved #{n} calls")
+
+      other ->
+        Logger.debug("Got other #{inspect(other)}")
+        :ok
+    end
+  end
+
+  @tag timeout: 1_200
+  test "Calls are not serialized" do
+    # Can do several calls from the JSON side and they are answered as data is
+    # ready, and viceversa
+
+    {:ok, client} = MOM.RPC.Client.start_link(writef: {__MODULE__, :writef_sleep_echo, []})
+    MOM.RPC.Client.set(client, :count, 0)
+
+    # First call to other side. As call blocks, it needs to be called each on
+    # one  process, which will be the same used to process the request.
+
+    tasks =
+      for _i <- 1..20 do
+        Task.async(fn ->
+          # Logger.debug("Ask as #{inspect(self())}")
+          {:ok, :ok} = MOM.RPC.Client.call(client, "echo", [200, :ok, "#{inspect(self())}"])
+        end)
+      end
+
+    for t <- tasks do
+      Task.await(t)
+    end
+
+    assert MOM.RPC.Client.get(client, :count) == 20
+
+    Logger.info("Now call events")
+    # events are also non blocking and do not require the task trick to check.. careful here.
+    for _i <- 1..20 do
+      # Logger.debug("Ask as #{inspect(self())}")
+      :ok = MOM.RPC.Client.event(client, "echo", [200, :ok, "#{inspect(self())}"])
+    end
+
+    # Now call from JSON to method caller.
+    Logger.info("Now call to rpc")
+
+    MOM.RPC.Client.add_method(client, "sleep", fn [sleept] ->
+      :timer.sleep(sleept)
+      :ok
+    end)
+
+    :timer.sleep(300)
+    assert MOM.RPC.Client.get(client, :count) == 40
+
+    for i <- 1..20 do
+      {:ok, jsreq} =
+        Poison.encode(%{
+          id: i,
+          method: "sleep",
+          params: [200]
+        })
+
+      MOM.RPC.Client.parse_line(client, jsreq)
+    end
+
+    :timer.sleep(300)
+    assert MOM.RPC.Client.get(client, :count) == 60
   end
 end

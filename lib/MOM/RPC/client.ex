@@ -156,7 +156,8 @@ defmodule MOM.RPC.Client do
   end
 
   def handle_call({:update, something, how}, _from, status) do
-    {:reply, :ok, Map.put(status, something, how.(status[something]))}
+    newvalue = how.(status[something])
+    {:reply, newvalue, Map.put(status, something, newvalue)}
   end
 
   def terminate(reason, state) do

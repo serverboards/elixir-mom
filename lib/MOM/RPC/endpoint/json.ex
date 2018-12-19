@@ -61,13 +61,19 @@ defmodule MOM.RPC.EndPoint.JSON do
             {:ok, %{"method" => method, "params" => params, "id" => id}} ->
               {in_, out} = GenServer.call(client, {:get_inout})
 
-              MOM.Channel.send(out, %MOM.RPC.Request{
-                method: method,
-                params: params,
-                id: id,
-                context: context,
-                reply: in_
-              })
+              MOM.Channel.send(
+                out,
+                %MOM.RPC.Request{
+                  method: method,
+                  params: params,
+                  id: id,
+                  context: context,
+                  reply: in_
+                },
+                async: true
+              )
+
+              :ok
 
             {:ok, %{"method" => method, "params" => params}} ->
               {in_, out} = GenServer.call(client, {:get_inout})
