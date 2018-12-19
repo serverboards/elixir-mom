@@ -14,8 +14,6 @@ defmodule MOM.RPC.EndPoint do
   defstruct in: nil,
             out: nil
 
-  use GenServer
-
   def new() do
     {:ok, in_} = MOM.Channel.PointToPoint.start_link(default: &MOM.RPC.EndPoint.unknown_method/2)
     {:ok, out} = MOM.Channel.PointToPoint.start_link(default: &MOM.RPC.EndPoint.unknown_method/2)

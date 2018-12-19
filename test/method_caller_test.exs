@@ -258,7 +258,7 @@ defmodule Serverboards.MethodCallerTest do
 
     # ensure all perms in required are in context
     allow =
-      Enum.all?(options[:perms], fn p ->
+      Enum.all?(Access.get(options, :perms, []), fn p ->
         Enum.member?(context.perms, p)
       end)
 
@@ -306,5 +306,9 @@ defmodule Serverboards.MethodCallerTest do
 
     assert Agent.get(ncalls, & &1) == 1
     assert res == {:error, :permission_denied}
+
+    res = MOM.RPC.MethodCaller.call(mc, "dir", [], %{ncalls: ncalls, perms: []})
+    Logger.debug("Call dir no perms #{inspect(res)}")
+    assert res == {:ok, ["dir"]}
   end
 end

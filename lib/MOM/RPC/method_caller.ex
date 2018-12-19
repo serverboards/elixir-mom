@@ -213,8 +213,9 @@ defmodule MOM.RPC.MethodCaller do
 
   In this example a map is used as context. Normally it would be a RPC.Context.
   """
-  def add_guard(pid, guard_f) when is_pid(pid) do
-    GenServer.call(pid, {:add_guard, guard_f})
+  @spec add_guard(pid :: pid, mfa :: {atom(), atom(), [any()]}) :: :ok
+  def add_guard(pid, {_mod, _fun_, _args} = guard) when is_pid(pid) do
+    GenServer.call(pid, {:add_guard, guard})
   end
 
   def lookup(pid, method) do
@@ -233,18 +234,13 @@ defmodule MOM.RPC.MethodCaller do
 
   def call({func, options, guards}, args, context) do
     # Second part call the known funtion and options
-    # Logger.debug("Guards are #{inspect({func, options, guards})}")
-
-    allow_func =
-      Enum.reduce(guards, true, fn
-        {mod, fun, args}, true ->
-          apply(mod, fun, args ++ [context, options])
-
-        _, other ->
-          other
-      end)
+    # Logger.debug(
+    #   "Try call are #{inspect(func)} options: #{inspect(options)}, guards #{inspect(guards)})}"
+    # )
 
     # Logger.debug("Allow func result is #{inspect(allow_func)}")
+
+    allow_func = check_guards(context, options, guards)
 
     case allow_func do
       true ->
@@ -284,6 +280,10 @@ defmodule MOM.RPC.MethodCaller do
             Logger.debug("#{inspect(error)}")
             {:error, error}
         end
+
+      false ->
+        # method hiding
+        {:error, :unknown_method}
 
       other ->
         {:error, other}
@@ -336,7 +336,9 @@ defmodule MOM.RPC.MethodCaller do
     local =
       st.methods
       |> Enum.flat_map(fn {name, {_, options}} ->
-        if check_guards(%MOM.RPC.Request{method: name, context: context}, options, st.guards) do
+        # Logger.debug("Check perm for #{inspect(name)} | #{inspect(options)}")
+
+        if check_guards(context, options, st.guards) == true do
           [name]
         else
           []
@@ -365,31 +367,20 @@ defmodule MOM.RPC.MethodCaller do
     {:reply, :ok, %{status | mc: [nmc | status.mc]}}
   end
 
-  # Checks all the guards, return false if any fails.
-  defp check_guards(%MOM.RPC.Request{}, _, []), do: true
+  @docp ~S"""
+  Checks all the guards, return false if any fails.
 
-  defp check_guards(%MOM.RPC.Request{} = msg, options, [{gname, gf} | rest]) do
-    try do
-      if gf.(msg, options) do
-        # Logger.debug("Guard #{inspect msg} #{inspect gname} allowed pass")
-        check_guards(msg, options, rest)
-      else
-        # Logger.debug("Guard #{inspect msg} #{inspect gname} STOPPED pass")
-        false
-      end
-    rescue
-      FunctionClauseError ->
-        # Logger.debug("Guard #{inspect msg} #{inspect gname} STOPPED pass (Function Clause Error)")
-        false
+  Returns true if everything ok, or false | :error_code if not allowed.
 
-      e ->
-        Logger.error(
-          "Error checking method caller guard #{gname}: #{inspect(e)}\n#{
-            Exception.format_stacktrace()
-          }"
-        )
+  Callers be careful, as an atom is a trueish value, but it is not true.
+  """
+  defp check_guards(context, options, guards) do
+    Enum.reduce(guards, true, fn
+      {mod, fun, args}, true ->
+        apply(mod, fun, args ++ [context, options])
 
-        false
-    end
+      _, other ->
+        other
+    end)
   end
 end
