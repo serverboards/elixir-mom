@@ -486,4 +486,55 @@ defmodule Serverboards.RPC.ClientTest do
     called = MOM.RPC.Client.get(client, :called)
     assert called == 1
   end
+
+  def writef_echo(client, line) do
+    {:ok, msg} = Poison.decode(line)
+
+    case msg do
+      %{"method" => "echo", "id" => id, "params" => params} ->
+        {:ok, jsres} =
+          Poison.encode(%{
+            id: id,
+            result: params
+          })
+
+        MOM.RPC.Client.parse_line(client, jsres)
+
+      %{"method" => "error", "id" => id, "params" => params} ->
+        {:ok, jsres} =
+          Poison.encode(%{
+            id: id,
+            error: params
+          })
+
+        MOM.RPC.Client.parse_line(client, jsres)
+
+      _ ->
+        :ok
+    end
+  end
+
+  @tag timeout: 1_000
+  test "Basic JSON substitutions" do
+    # Some substitutions on responses
+    {:ok, client} = MOM.RPC.Client.start_link(writef: {__MODULE__, :writef_echo, []})
+
+    res = MOM.RPC.Client.call(client, "echo", :ok)
+    assert res == {:ok, :ok}
+
+    res = MOM.RPC.Client.call(client, "error", :ok)
+    assert res == {:error, "ok"}
+
+    res = MOM.RPC.Client.call(client, "error", :unknown_method)
+    assert res == {:error, :unknown_method}
+
+    res = MOM.RPC.Client.call(client, "error", :timeout)
+    assert res == {:error, :timeout}
+
+    res = MOM.RPC.Client.call(client, "error", :exit)
+    assert res == {:error, :exit}
+
+    res = MOM.RPC.Client.call(client, "error", :exit2)
+    assert res == {:error, "exit2"}
+  end
 end

@@ -83,10 +83,26 @@ defmodule MOM.RPC.EndPoint.JSON do
             # this are answers from JSON side to the other side
             {:ok, %{"result" => result, "id" => id}} ->
               out = GenServer.call(client, {:pop_reply_to, id})
+
+              result =
+                case result do
+                  "ok" -> :ok
+                  other -> other
+                end
+
               MOM.Channel.send(out, %MOM.RPC.Response{result: result, id: id})
 
             {:ok, %{"error" => error, "id" => id}} ->
               out = GenServer.call(client, {:pop_reply_to, id})
+
+              error =
+                case error do
+                  "unknown_method" -> :unknown_method
+                  "timeout" -> :timeout
+                  "exit" -> :exit
+                  other -> other
+                end
+
               MOM.Channel.send(out, %MOM.RPC.Response.Error{error: error, id: id})
 
             # no idea, should close.
